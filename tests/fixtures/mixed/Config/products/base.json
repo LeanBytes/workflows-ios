@@ -1,0 +1,9 @@
+{
+  "scheme": "Base",
+  "bundle-id": "io.leanbytes.base",
+  "cert-secret": "APPLE_DISTR_P12_ALT_BASE64",
+  "cert-password-secret": "APPLE_DISTR_PASSWORD_ALT",
+  "changelog": { "versions": [
+    { "version": "1.0.0", "items": [ { "type": "feat", "title": { "en": "Base feature" } } ] }
+  ] }
+}

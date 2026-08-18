@@ -1,0 +1,44 @@
+# ── Per-app release shell (iOS) ──────────────────────────────────────────────
+# Copy to .github/workflows/distribute-release.yml. Each product releases
+# INDEPENDENTLY via its own tag `<id>-v<X.Y.Z>` (e.g. `pro-v1.1.1`); the primary
+# product (the one whose file omits `id`) uses a bare `vX.Y.Z`. The orchestrator
+# parses the tag → the target product, validates the version against that
+# product's inline changelog, and builds + uploads just it.
+#
+# UPLOAD ONLY — create the App Store version and hit Submit for Review in App
+# Store Connect once the build finishes processing.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Distribute Release
+
+on:
+  push:
+    tags:
+      - 'v*'              # primary product:  v2.12.0
+      - '*-v*'            # extra products:   pro-v1.1.1
+      - '!*-beta.*'       # exclude auto-pushed betas
+      - '!*-alpha.*'
+
+permissions:
+  contents: write
+  discussions: write     # required only for the opt-in create-discussion path
+
+jobs:
+  release:
+    uses: LeanBytes/workflows-ios/.github/workflows/distribute-release.yml@v0.1.0
+    secrets:
+      APPLE_DISTR_P12_BASE64:       ${{ secrets.APPLE_DISTR_P12_BASE64 }}
+      APPLE_DISTR_PASSWORD:         ${{ secrets.APPLE_DISTR_PASSWORD }}
+      KEYCHAIN_PASSWORD:            ${{ secrets.KEYCHAIN_PASSWORD }}
+      PROV_PROF_STORE_BASE64:       ${{ secrets.PROV_PROF_STORE_BASE64 }}
+      # PROV_PROF_STORE_PRO_BASE64: ${{ secrets.PROV_PROF_STORE_PRO_BASE64 }}
+      # APPLE_DISTR_P12_ALT_BASE64: ${{ secrets.APPLE_DISTR_P12_ALT_BASE64 }}
+      # APPLE_DISTR_PASSWORD_ALT:   ${{ secrets.APPLE_DISTR_PASSWORD_ALT }}
+      ASC_KEY_ID:                   ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID:                ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_BASE64:               ${{ secrets.ASC_KEY_BASE64 }}
+      SHARED_WORKFLOWS_TOKEN:       ${{ secrets.SHARED_WORKFLOWS_TOKEN }}
+    # with:
+    #   use-tuist: true
+    #   runs-on-build: '"macos-26"'      # runners default to self-hosted macOS; override to hosted here
+    #   create-discussion: true          # opt-in; needs Discussions + the exact category
+    #   artifact-retention-days: 30

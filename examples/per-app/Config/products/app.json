@@ -1,0 +1,17 @@
+{
+  "scheme": "MyApp",
+  "product-name": "My App",
+  "bundle-id": "io.leanbytes.myapp",
+  "source-paths": ["Sources/**", "Resources/**", "Project.swift"],
+  "changelog": {
+    "comingNext": [],
+    "versions": [
+      {
+        "version": "1.0.0",
+        "items": [
+          { "type": "feat", "title": { "en": "Initial release", "de": "Erste Version" }, "issues": ["#1"] }
+        ]
+      }
+    ]
+  }
+}

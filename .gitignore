@@ -1,0 +1,9 @@
+tmp/
+
+.DS_Store
+.claude/settings.local.json
+.claude/worktrees
+
+# Python bytecode (from running the .github/scripts/*.py locally)
+__pycache__/
+*.pyc

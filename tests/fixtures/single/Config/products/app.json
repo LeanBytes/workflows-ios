@@ -1,0 +1,8 @@
+{
+  "id": "app",
+  "scheme": "App",
+  "bundle-id": "io.leanbytes.app",
+  "changelog": { "versions": [
+    { "version": "1.0.0", "items": [ { "type": "feat", "title": { "en": "Initial release" } } ] }
+  ] }
+}

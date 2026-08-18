@@ -1,0 +1,32 @@
+# ── Per-app PR shell (iOS) ───────────────────────────────────────────────────
+# Copy to .github/workflows/distribute-pr.yml. Trigger-only: the orchestrator
+# discovers every Config/products/<id>.json and compiles each one. Fork-PR safe
+# (the product files ship with the checkout).
+# ─────────────────────────────────────────────────────────────────────────────
+name: Distribute PR
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  pr:
+    uses: LeanBytes/workflows-ios/.github/workflows/distribute-pr.yml@v0.1.0
+    # Required while workflows-ios is private: github.token cannot read another
+    # private repo, so the shared scripts checkout needs a PAT. Set
+    # SHARED_WORKFLOWS_TOKEN as a LeanBytes org secret and every app inherits it.
+    secrets:
+      SHARED_WORKFLOWS_TOKEN: ${{ secrets.SHARED_WORKFLOWS_TOKEN }}
+    # ── Optional inputs (uncomment what applies) ────────────────────────────
+    # with:
+    #   use-tuist: true                                 # Tuist-generated project
+    #   lfs: true                                       # an LFS-tracked build input
+    #   runs-on-build: '"macos-26"'                     # runners default to self-hosted macOS; override to hosted here
+    #   run-tests: true                                 # build + test instead of compile-only
+    #   test-runner: both
+    #   test-destination: 'platform=iOS Simulator,name=iPhone 17'
+    #   swift-package-path: Core
+    #   coverage-min: "70"

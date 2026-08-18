@@ -1,0 +1,9 @@
+{
+  "id": "pro",
+  "scheme": "Pro",
+  "bundle-id": "io.leanbytes.pro",
+  "profile-secret": "PROV_PROF_STORE_PRO_BASE64",
+  "changelog": { "versions": [
+    { "version": "2.0.0", "items": [ { "type": "feat", "title": { "en": "Pro feature" } } ] }
+  ] }
+}

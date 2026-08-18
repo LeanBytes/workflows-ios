@@ -1,0 +1,10 @@
+{
+  "id": "main",
+  "scheme": "Main",
+  "product-name": "Main App",
+  "bundle-id": "io.leanbytes.main",
+  "source-paths": ["Sources/**", "Project.swift"],
+  "changelog": { "versions": [
+    { "version": "2.14.0", "items": [ { "type": "feat", "title": { "en": "New thing" } } ] }
+  ] }
+}

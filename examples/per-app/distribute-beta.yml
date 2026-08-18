@@ -1,0 +1,48 @@
+# ── Per-app beta shell (iOS) ─────────────────────────────────────────────────
+# Copy to .github/workflows/distribute-beta.yml. Fires on every push to main.
+# The orchestrator discovers Config/products/<id>.json and cuts a beta for each
+# product whose OWN file (or its source-paths) changed since its last beta.
+# Each product uploads to TestFlight, then pushes its own
+# <id>-v<ver>-beta.N tag + a notes-only pre-release.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Distribute Beta
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  beta:
+    uses: LeanBytes/workflows-ios/.github/workflows/distribute-beta.yml@v0.1.0
+    # The explicit list works in every configuration. `secrets: inherit` is a
+    # same-org shortcut only — it silently passes NOTHING once the call chain
+    # crosses an account boundary, and every signing step then fails with a
+    # `security: SecKeychainItemImport` error.
+    secrets:
+      APPLE_DISTR_P12_BASE64:       ${{ secrets.APPLE_DISTR_P12_BASE64 }}
+      APPLE_DISTR_PASSWORD:         ${{ secrets.APPLE_DISTR_PASSWORD }}
+      KEYCHAIN_PASSWORD:            ${{ secrets.KEYCHAIN_PASSWORD }}
+      PROV_PROF_STORE_BASE64:       ${{ secrets.PROV_PROF_STORE_BASE64 }}
+      # Per-product overrides a product file names via profile-secret / cert-secret:
+      # PROV_PROF_STORE_PRO_BASE64: ${{ secrets.PROV_PROF_STORE_PRO_BASE64 }}
+      # APPLE_DISTR_P12_ALT_BASE64: ${{ secrets.APPLE_DISTR_P12_ALT_BASE64 }}
+      # APPLE_DISTR_PASSWORD_ALT:   ${{ secrets.APPLE_DISTR_PASSWORD_ALT }}
+      ASC_KEY_ID:                   ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID:                ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_BASE64:               ${{ secrets.ASC_KEY_BASE64 }}
+      SHARED_WORKFLOWS_TOKEN:       ${{ secrets.SHARED_WORKFLOWS_TOKEN }}
+      # JIRA_API_TOKEN:             ${{ secrets.JIRA_API_TOKEN }}   # if run-tests
+    # ── Defaults a product file inherits when it omits them ─────────────────
+    # with:
+    #   distribute: false                # build + sign only, never touch ASC (dry run)
+    #   use-tuist: true
+    #   lfs: true
+    #   # runners default to self-hosted macOS ([self-hosted, macOS]); override here, e.g.:
+    #   runs-on-build: '["self-hosted","agent-alex"]'   # pin to a specific runner
+    #   runs-on-publish: '"macos-26"'                    # or send a job back to a hosted runner
+    #   run-tests: true                  # gate the beta on tests (files a Jira ticket on failure)
+    #   test-destination: 'platform=iOS Simulator,name=iPhone 17'
+    #   artifact-retention-days: 30      # keep uploaded build/test artifacts longer than the 7-day default
