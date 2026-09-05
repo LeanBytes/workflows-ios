@@ -19,7 +19,7 @@
 #       branches: [main]
 #   jobs:
 #     beta:
-#       uses: LeanBytes/workflows-ios/.github/workflows/distribute-beta.yml@v0.1.0
+#       uses: LeanBytes/workflows-ios/.github/workflows/distribute-beta.yml@v0.1.1
 #       secrets: ...   # explicit block — see examples/per-app/distribute-beta.yml
 # ─────────────────────────────────────────────────────────────────────────────
 name: distribute-beta
@@ -57,6 +57,10 @@ on:
         default: '["self-hosted","macOS"]'
       runs-on-publish:
         description: "JSON-encoded runner for the publish job. Defaults to self-hosted macOS."
+        type: string
+        default: '["self-hosted","macOS"]'
+      runs-on-prepare:
+        description: "JSON-encoded runner for the coordination jobs (discover/prepare — checkout + python3, no Xcode). Defaults to self-hosted macOS."
         type: string
         default: '["self-hosted","macOS"]'
 
@@ -130,7 +134,7 @@ concurrency:
 
 jobs:
   prepare:
-    runs-on: [self-hosted, macOS]
+    runs-on: ${{ fromJSON(inputs.runs-on-prepare) }}
     timeout-minutes: 5
     outputs:
       products: ${{ steps.plan.outputs.beta-products }}
@@ -169,10 +173,11 @@ jobs:
   test:
     if: inputs.run-tests
     needs: prepare
-    uses: LeanBytes/workflows-ios/.github/workflows/_test.yml@v0.1.0
+    uses: LeanBytes/workflows-ios/.github/workflows/_test.yml@v0.1.1
     with:
       test-runner: ${{ inputs.test-runner }}
       runs-on: ${{ inputs.runs-on-build }}
+      runs-on-gate: ${{ inputs.runs-on-prepare }}
       lfs: ${{ inputs.lfs }}
       artifact-retention-days: ${{ inputs.artifact-retention-days }}
       test-scheme: ${{ inputs.test-scheme != '' && inputs.test-scheme || needs.prepare.outputs.test-scheme }}
@@ -199,7 +204,7 @@ jobs:
       fail-fast: false
       matrix:
         product: ${{ fromJSON(needs.prepare.outputs.products) }}
-    uses: LeanBytes/workflows-ios/.github/workflows/_build-ios.yml@v0.1.0
+    uses: LeanBytes/workflows-ios/.github/workflows/_build-ios.yml@v0.1.1
     with:
       version: ${{ matrix.product.marketing }}        # bare X.Y.Z — ASC rejects suffixes
       build-number: ${{ needs.prepare.outputs.build-number }}

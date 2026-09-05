@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   beta:
-    uses: LeanBytes/workflows-ios/.github/workflows/distribute-beta.yml@v0.1.0
+    uses: LeanBytes/workflows-ios/.github/workflows/distribute-beta.yml@v0.1.1
     # The explicit list works in every configuration. `secrets: inherit` is a
     # same-org shortcut only — it silently passes NOTHING once the call chain
     # crosses an account boundary, and every signing step then fails with a
