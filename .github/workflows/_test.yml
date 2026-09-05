@@ -33,6 +33,10 @@ on:
         description: "JSON-encoded runner. Defaults to self-hosted macOS; tests are fast, so a hosted runner (macos-26) is fine too."
         type: string
         default: '["self-hosted","macOS"]'
+      runs-on-gate:
+        description: "JSON-encoded runner for the cheap gate job (checkout + a cache lookup). Defaults to self-hosted macOS."
+        type: string
+        default: '["self-hosted","macOS"]'
       job-timeout-minutes:
         type: number
         default: 60
@@ -120,7 +124,7 @@ permissions:
 
 jobs:
   gate:
-    runs-on: [self-hosted, macOS]
+    runs-on: ${{ fromJSON(inputs.runs-on-gate) }}
     timeout-minutes: 5
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}

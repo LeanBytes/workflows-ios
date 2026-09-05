@@ -18,7 +18,7 @@
 #         - '!*-alpha.*'
 #   jobs:
 #     release:
-#       uses: LeanBytes/workflows-ios/.github/workflows/distribute-release.yml@v0.1.0
+#       uses: LeanBytes/workflows-ios/.github/workflows/distribute-release.yml@v0.1.1
 #       secrets: ...   # explicit block — see examples/per-app/distribute-release.yml
 # ─────────────────────────────────────────────────────────────────────────────
 name: distribute-release
@@ -56,6 +56,10 @@ on:
         default: '["self-hosted","macOS"]'
       runs-on-publish:
         description: "JSON-encoded runner for the publish job. Defaults to self-hosted macOS."
+        type: string
+        default: '["self-hosted","macOS"]'
+      runs-on-prepare:
+        description: "JSON-encoded runner for the coordination jobs (discover/prepare — checkout + python3, no Xcode). Defaults to self-hosted macOS."
         type: string
         default: '["self-hosted","macOS"]'
 
@@ -96,7 +100,7 @@ permissions:
 
 jobs:
   prepare:
-    runs-on: [self-hosted, macOS]
+    runs-on: ${{ fromJSON(inputs.runs-on-prepare) }}
     timeout-minutes: 5
     outputs:
       target-id: ${{ steps.plan.outputs.target-id }}
@@ -137,7 +141,7 @@ jobs:
       fail-fast: false
       matrix:
         product: ${{ fromJSON(needs.prepare.outputs.products) }}
-    uses: LeanBytes/workflows-ios/.github/workflows/_build-ios.yml@v0.1.0
+    uses: LeanBytes/workflows-ios/.github/workflows/_build-ios.yml@v0.1.1
     with:
       version: ${{ needs.prepare.outputs.version }}
       build-number: ${{ needs.prepare.outputs.build-number }}

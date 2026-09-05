@@ -189,7 +189,7 @@ one secret — open an issue when an app needs it.
 ## Runners
 
 Every job defaults to `runs-on: [self-hosted, macOS]`. Each runner is a **JSON-encoded**
-`runs-on` / `runs-on-build` / `runs-on-publish` input consumed via `fromJSON()`:
+`runs-on` / `runs-on-build` / `runs-on-publish` / `runs-on-prepare` input consumed via `fromJSON()`:
 
 ```yaml
 runs-on-build: '"macos-26"'                   # a GitHub-hosted runner
@@ -198,6 +198,18 @@ runs-on-build: '["self-hosted","agent-alex"]' # a specific self-hosted runner
 
 A bare `macos-26` is **not** valid. An app with no self-hosted macOS runner **must** override these,
 or its jobs queue forever.
+
+`runs-on-prepare` covers the cheap coordination jobs — `discover` on PRs, `prepare` on beta/release,
+and (passed through automatically) `_test.yml`'s `gate`. They run `actions/checkout` plus `python3`
+and never touch Xcode, so a hosted `'"ubuntu-latest"'` is the cheapest correct value there. An app on
+hosted runners overrides all three:
+
+```yaml
+with:
+  runs-on-prepare: '"ubuntu-latest"'
+  runs-on-build:   '"macos-26"'
+  runs-on-publish: '"macos-26"'   # altool — must be macOS
+```
 
 ## Development
 
