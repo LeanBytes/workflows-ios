@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   release:
-    uses: LeanBytes/workflows-ios/.github/workflows/distribute-release.yml@v0.1.1
+    uses: LeanBytes/workflows-ios/.github/workflows/distribute-release.yml@v0.2.0
     secrets:
       APPLE_DISTR_P12_BASE64:       ${{ secrets.APPLE_DISTR_P12_BASE64 }}
       APPLE_DISTR_PASSWORD:         ${{ secrets.APPLE_DISTR_PASSWORD }}

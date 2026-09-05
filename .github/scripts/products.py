@@ -162,6 +162,10 @@ def resolve(products_dir, defaults):
 
         # Mandatory inline changelog → the product's version source.
         version = ""
+        channel = str(p.get("channel") or "app-store").strip()
+        if channel not in ("app-store", "ad-hoc"):
+            errors.append(f"product '{pid}': channel must be 'app-store' or 'ad-hoc', got {channel!r}")
+
         cl = p.get("changelog")
         if not isinstance(cl, dict) or not (cl.get("versions") or []):
             errors.append(f"product '{pid}': mandatory 'changelog' with versions[0].version is missing")
@@ -176,6 +180,12 @@ def resolve(products_dir, defaults):
             "scheme": scheme,
             "product-name": product_name,
             "bundle-id": bundle_id,
+            # Vertriebskanal des Produkts. "app-store" lädt per altool nach App
+            # Store Connect; "ad-hoc" exportiert release-testing-signiert und legt
+            # IPA + manifest.plist auf S3, von wo ein registriertes Gerät sie per
+            # itms-services ohne Apple ID installiert. Kanalabhängig sind Export-
+            # Methode und Publish-Leg — Archive und Signatur sind identisch.
+            "channel": channel,
             "profile-secret": str(p.get("profile-secret") or ""),
             "cert-secret": str(p.get("cert-secret") or ""),
             "cert-password-secret": str(p.get("cert-password-secret") or ""),

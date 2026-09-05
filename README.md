@@ -9,10 +9,15 @@ App Store Connect (TestFlight + App Store). The iOS sibling of
 > self-contained `Config/products/<id>.json` per product (build identity + inline changelog) as the
 > source of truth, self-hosted macOS runners by default — reflect that specific use case.
 
-**iOS has no external distribution.** Everything ships through App Store Connect, so unlike the macOS
-sibling there is no Developer ID channel: no notarization, no stapling, no Gatekeeper assessment, no
-DMG or ZIP, no Sparkle appcast, no S3 binary hosting. One channel, one build callee, one `has-any`
-gate.
+**Two channels, one build callee.** Most apps ship through App Store Connect (TestFlight + App Store).
+A product that cannot — an app for under-13 family members, whom TestFlight's terms exclude — sets
+`"channel": "ad-hoc"` and is instead signed for **release-testing** and published to S3 as
+`app.ipa` + `manifest.plist`, which a device with a registered UDID installs over the air via an
+`itms-services://` link **without any Apple ID**. Archive and signing are identical either way; only
+the ExportOptions `method` and the publish leg differ.
+
+There is still no Developer ID equivalent: no notarization, no stapling, no Gatekeeper assessment, no
+DMG or ZIP, no Sparkle appcast.
 
 Adding a new app means: dropping one `Config/products/<id>.json` per product, setting 7 secrets, and
 copying three **trigger-only** shell workflows into `.github/workflows/` (they *discover* your
@@ -84,6 +89,40 @@ own secrets in the product file — e.g. `PROV_PROF_STORE_PRO_BASE64`, `APPLE_DI
 No repo **Variables** are needed. (The macOS sibling needs `S3_DISTRIBUTION_PATH` /
 `S3_DOWNLOAD_URL` for direct-download hosting; iOS has no binaries to host.)
 
+### Ad Hoc channel (`"channel": "ad-hoc"`)
+
+Swap two secrets and add three settings:
+
+| What | Value |
+|---|---|
+| `profile-secret` in the product file | name of the secret holding the **Ad Hoc** profile, e.g. `PROV_PROF_ADHOC_BASE64` |
+| `ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_KEY_BASE64` | not needed — nothing is uploaded to App Store Connect |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | secrets, for the S3 upload |
+| `S3_DISTRIBUTION_PATH`, `S3_DOWNLOAD_URL` | repo **variables**, same meaning as in `workflows-macos` |
+
+The upload lands at a **stable** path so the install link never changes across versions:
+
+```
+<S3_DISTRIBUTION_PATH>/<bundle-id>/app.ipa
+<S3_DISTRIBUTION_PATH>/<bundle-id>/manifest.plist
+```
+
+and the install link is
+
+```
+itms-services://?action=download-manifest&url=<S3_DOWNLOAD_URL>/<bundle-id>/manifest.plist
+```
+
+Three things bite here, all of them silently:
+
+- **Both URLs must be HTTPS with a valid certificate.** iOS gives no useful error otherwise.
+- **The manifest must be served as `text/xml`.** With S3's default `application/octet-stream` iOS downloads it and refuses to read it. The workflow sets the content type explicitly.
+- **The link must be tapped in Safari.** Chrome and in-app browsers do not hand `itms-services://` to the installer.
+
+No App Store Connect app record is required for this channel — only a registered App ID, the device
+UDIDs, and the Ad Hoc profile. **The profile expires after one year, and the installed app then stops
+launching**, so an annual rebuild plus a re-tap on every device is not optional.
+
 Encode the p12 and profile like this:
 
 ```bash
@@ -104,6 +143,7 @@ base64 -i AuthKey_XXXXXXXXXX.p8  | pbcopy   # → ASC_KEY_BASE64
 | `profile-secret` | no | Name of the secret holding this product's profile. Defaults to `PROV_PROF_STORE_BASE64`. |
 | `cert-secret` / `cert-password-secret` | no | Names of the secrets holding this product's Apple Distribution p12 + password. Default to `APPLE_DISTR_P12_BASE64` / `APPLE_DISTR_PASSWORD`. |
 | `source-paths` | no | Git pathspecs this product builds from, e.g. `["Sources/**", "Project.swift"]`. **Set this** — without it a code-only push cuts no beta. |
+| `channel` | no | `app-store` (default) → TestFlight via `altool`. `ad-hoc` → `release-testing` export, IPA + manifest to S3. |
 | `changelog` | **yes** | Inline changelog. `versions[0].version` is the version this product is building toward. |
 
 ```json

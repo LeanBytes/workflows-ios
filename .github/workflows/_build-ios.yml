@@ -91,6 +91,15 @@ on:
         required: false
         type: string
         default: ""
+      export-method:
+        description: >-
+          ExportOptions `method`. "app-store-connect" for TestFlight/App Store,
+          "release-testing" for Ad Hoc (installs on registered UDIDs via
+          itms-services, no Apple ID on the device). Xcode still accepts the old
+          "ad-hoc" spelling but reports it as deprecated.
+        required: false
+        type: string
+        default: "app-store-connect"
 
     secrets:
       APPLE_DISTR_P12_BASE64:
@@ -315,7 +324,7 @@ jobs:
           <plist version="1.0">
           <dict>
             <key>method</key>
-            <string>app-store-connect</string>
+            <string>${{ inputs.export-method }}</string>
             <key>signingStyle</key>
             <string>manual</string>
             <key>uploadSymbols</key>

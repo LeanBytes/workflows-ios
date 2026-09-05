@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   pr:
-    uses: LeanBytes/workflows-ios/.github/workflows/distribute-pr.yml@v0.1.1
+    uses: LeanBytes/workflows-ios/.github/workflows/distribute-pr.yml@v0.2.0
     # Required while workflows-ios is private: github.token cannot read another
     # private repo, so the shared scripts checkout needs a PAT. Set
     # SHARED_WORKFLOWS_TOKEN as a LeanBytes org secret and every app inherits it.
