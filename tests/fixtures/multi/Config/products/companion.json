@@ -4,7 +4,20 @@
   "bundle-id": "io.leanbytes.companion",
   "distribute": false,
   "profile-secret": "PROV_PROF_STORE_COMPANION_BASE64",
-  "changelog": { "versions": [
-    { "version": "1.3.0", "items": [ { "type": "fix", "title": { "en": "Fixed thing" } } ] }
-  ] }
+  "changelog": {
+    "versions": [
+      {
+        "version": "1.3.0",
+        "items": [
+          {
+            "type": "fix",
+            "title": {
+              "en": "Fixed thing"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "channel": "ad-hoc"
 }

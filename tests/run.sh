@@ -35,6 +35,18 @@ jok "distribute defaults true, product file overrides to false" \
   'p={x["id"]:x for x in json.loads(o["products"])}; assert p["main"]["distribute"] is True; assert p["companion"]["distribute"] is False'
 jok "per-product profile secret carried" \
   'p={x["id"]:x for x in json.loads(o["products"])}; assert p["companion"]["profile-secret"]=="PROV_PROF_STORE_COMPANION_BASE64"; assert p["main"]["profile-secret"]==""'
+jok "channel defaults to app-store, product file overrides to ad-hoc" \
+  'p={x["id"]:x for x in json.loads(o["products"])}; assert p["main"]["channel"]=="app-store"; assert p["companion"]["channel"]=="ad-hoc"'
+
+echo "== discover: an unknown channel fails loudly rather than defaulting =="
+BAD=$(mktemp -d)/products; mkdir -p "$BAD"
+cat > "$BAD/app.json" <<'JSON'
+{ "scheme": "X", "bundle-id": "com.a.b", "channel": "typo",
+  "changelog": { "versions": [ { "version": "1.0.0", "items": [] } ] } }
+JSON
+CAP PRODUCTS_DIR="$BAD" python3 "$PY" discover
+[ $RC -ne 0 ] && pass "exit non-zero" || bad "unknown channel should fail"
+grep -q "channel must be" /tmp/pd.err && pass "names the offending key" || bad "error text" 
 
 echo "== discover: DEF_DISTRIBUTE=false flips the default, not the override =="
 CAP PRODUCTS_DIR="$MULTI" DEF_DISTRIBUTE=false python3 "$PY" discover

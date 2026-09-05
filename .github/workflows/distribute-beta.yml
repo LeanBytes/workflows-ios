@@ -19,7 +19,7 @@
 #       branches: [main]
 #   jobs:
 #     beta:
-#       uses: LeanBytes/workflows-ios/.github/workflows/distribute-beta.yml@v0.1.1
+#       uses: LeanBytes/workflows-ios/.github/workflows/distribute-beta.yml@v0.2.0
 #       secrets: ...   # explicit block — see examples/per-app/distribute-beta.yml
 # ─────────────────────────────────────────────────────────────────────────────
 name: distribute-beta
@@ -121,6 +121,8 @@ on:
       ASC_ISSUER_ID:              { required: false }
       ASC_KEY_BASE64:             { required: false }
       JIRA_API_TOKEN:             { required: false }
+      AWS_ACCESS_KEY_ID:          { required: false }   # nur für den ad-hoc-Kanal
+      AWS_SECRET_ACCESS_KEY:      { required: false }
       SHARED_WORKFLOWS_TOKEN:     { required: false }
 
 permissions:
@@ -173,7 +175,7 @@ jobs:
   test:
     if: inputs.run-tests
     needs: prepare
-    uses: LeanBytes/workflows-ios/.github/workflows/_test.yml@v0.1.1
+    uses: LeanBytes/workflows-ios/.github/workflows/_test.yml@v0.2.0
     with:
       test-runner: ${{ inputs.test-runner }}
       runs-on: ${{ inputs.runs-on-build }}
@@ -204,7 +206,7 @@ jobs:
       fail-fast: false
       matrix:
         product: ${{ fromJSON(needs.prepare.outputs.products) }}
-    uses: LeanBytes/workflows-ios/.github/workflows/_build-ios.yml@v0.1.1
+    uses: LeanBytes/workflows-ios/.github/workflows/_build-ios.yml@v0.2.0
     with:
       version: ${{ matrix.product.marketing }}        # bare X.Y.Z — ASC rejects suffixes
       build-number: ${{ needs.prepare.outputs.build-number }}
@@ -218,6 +220,7 @@ jobs:
       configuration: ${{ inputs.configuration }}
       lfs: ${{ inputs.lfs }}
       artifact-retention-days: ${{ inputs.artifact-retention-days }}
+      export-method: ${{ matrix.product.channel == 'ad-hoc' && 'release-testing' || 'app-store-connect' }}
     secrets:
       APPLE_DISTR_P12_BASE64: ${{ matrix.product.cert-secret != '' && secrets[matrix.product.cert-secret] || secrets.APPLE_DISTR_P12_BASE64 }}
       APPLE_DISTR_PASSWORD:   ${{ matrix.product.cert-password-secret != '' && secrets[matrix.product.cert-password-secret] || secrets.APPLE_DISTR_PASSWORD }}
@@ -258,14 +261,14 @@ jobs:
 
       # Expand the cutting set into a \x1f-delimited table (NOT tab — tab is
       # IFS-whitespace and `read` would collapse an empty column, shifting every
-      # later field). Read: id pname dist ver label rtag
+      # later field). Read: id pname dist ver label rtag chan bid
       - name: Expand products
         shell: bash
         run: |
           set -euo pipefail
           python3 - "$PRODUCTS_JSON" > /tmp/products.tsv <<'PY'
           import json, sys
-          fields = ["id","product-name","distribute","version","artifact-label","release-tag"]
+          fields = ["id","product-name","distribute","version","artifact-label","release-tag","channel","bundle-id"]
           for p in json.loads(sys.argv[1]):
               print("\x1f".join(str(p.get(k, "")) for k in fields))
           PY
@@ -294,7 +297,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          while IFS=$'\x1f' read -r id pname dist ver label rtag; do
+          while IFS=$'\x1f' read -r id pname dist ver label rtag chan bid; do
             CHANGELOG_PATH="${PRODUCTS_DIR}/$id.json" VERSION="NEXT" \
               .shared-ci/.github/scripts/changelog-from-json.sh > "/tmp/notes-$id.md" || true
           done < /tmp/products.tsv
@@ -307,6 +310,12 @@ jobs:
           ASC_KEY_BASE64: ${{ secrets.ASC_KEY_BASE64 }}
         run: |
           set -euo pipefail
+          # Ein reines Ad-Hoc-Repo hat gar keinen ASC-Key — dann ist das hier
+          # kein Fehler, sondern schlicht nichts zu tun.
+          if [ -z "${ASC_KEY_ID:-}" ] || [ -z "${ASC_KEY_BASE64:-}" ]; then
+            echo "Kein ASC-Key gesetzt — überspringe (nur für den app-store-Kanal nötig)."
+            exit 0
+          fi
           mkdir -p ~/.appstoreconnect/private_keys
           echo "$ASC_KEY_BASE64" | base64 --decode \
             > ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
@@ -319,8 +328,9 @@ jobs:
         run: |
           set -uo pipefail
           source .shared-ci/.github/scripts/classify-upload.sh
-          while IFS=$'\x1f' read -r id pname dist ver label rtag; do
+          while IFS=$'\x1f' read -r id pname dist ver label rtag chan bid; do
             [ "$dist" = "True" ] || { echo "product $id: distribute=false — skipping upload"; continue; }
+            [ "$chan" = "app-store" ] || { echo "product $id: channel=$chan — kein TestFlight-Upload"; continue; }
             echo "::group::TestFlight upload — product=$id"
             IPA=$(ls ./artifacts/ios/ios-build-$id/*.ipa 2>/dev/null | head -1 || true)
             if [ -z "$IPA" ] || [ ! -f "$IPA" ]; then
@@ -341,6 +351,69 @@ jobs:
             echo "::error::altool failed for $id (exit ${RC})"; echo "::endgroup::"; exit 1
           done < /tmp/products.tsv
 
+      # ── GATE: Ad-Hoc-Kanal — IPA + manifest.plist nach S3 ─────────────────
+      # Gleiche Stellung wie der altool-Upload: schlägt er fehl, wird weder
+      # getaggt noch released. Der Ablageort ist bewusst STABIL
+      # (<bucket>/<bundle-id>/app.ipa), damit der itms-services-Link auf der
+      # Installationsseite über alle Versionen hinweg derselbe bleibt — die
+      # Familie hat einen Link, kein Versions-Archiv.
+      - name: Install AWS CLI
+        if: contains(needs.prepare.outputs.products, '"channel":"ad-hoc"')
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v aws >/dev/null 2>&1; then
+            curl -fsSL "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o /tmp/AWSCLIV2.pkg
+            sudo installer -pkg /tmp/AWSCLIV2.pkg -target /
+            rm -f /tmp/AWSCLIV2.pkg
+          fi
+          aws --version
+
+      - name: Upload IPA + manifest to S3 (per ad-hoc product)
+        if: contains(needs.prepare.outputs.products, '"channel":"ad-hoc"')
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: "eu-central-1"
+          S3_DISTRIBUTION_PATH: ${{ vars.S3_DISTRIBUTION_PATH }}
+          S3_DOWNLOAD_URL: ${{ vars.S3_DOWNLOAD_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${S3_DISTRIBUTION_PATH:-}" ] || [ -z "${S3_DOWNLOAD_URL:-}" ]; then
+            echo "::error::Der ad-hoc-Kanal braucht die Variablen S3_DISTRIBUTION_PATH und S3_DOWNLOAD_URL."
+            exit 1
+          fi
+          while IFS=$'\x1f' read -r id pname dist ver label rtag chan bid; do
+            [ "$chan" = "ad-hoc" ] || continue
+            [ "$dist" = "True" ] || { echo "product $id: distribute=false — kein S3-Upload"; continue; }
+            echo "::group::S3 upload (ad-hoc) — product=$id"
+
+            IPA=$(ls ./artifacts/ios/ios-build-$id/*.ipa 2>/dev/null | head -1 || true)
+            if [ -z "$IPA" ] || [ ! -f "$IPA" ]; then
+              echo "::error::No .ipa for product $id"; echo "::endgroup::"; exit 1
+            fi
+
+            DEST="${S3_DISTRIBUTION_PATH%/}/${bid}"
+            BASE="${S3_DOWNLOAD_URL%/}/${bid}"
+
+            # Die Buildnummer ist der monoton steigende Zeitstempel und damit das,
+            # woran iOS ein Update erkennt — nicht die Marketing-Version.
+            .shared-ci/.github/scripts/manifest.sh \
+              "${BASE}/app.ipa" "$bid" "$BUILD_NUMBER" "$pname" > "/tmp/manifest-$id.plist"
+            plutil -lint "/tmp/manifest-$id.plist"
+
+            aws s3 cp "$IPA" "${DEST}/app.ipa" \
+              --content-type "application/octet-stream"
+            # text/xml ist Pflicht: mit dem S3-Default application/octet-stream
+            # lädt iOS das Manifest zwar, weigert sich aber es zu lesen.
+            aws s3 cp "/tmp/manifest-$id.plist" "${DEST}/manifest.plist" \
+              --content-type "text/xml"
+
+            echo "Installations-Link: itms-services://?action=download-manifest&url=${BASE}/manifest.plist"
+            echo "::endgroup::"
+          done < /tmp/products.tsv
+
       # ── Per product: push its own beta tag + pre-release (notes only) ─────
       # LAST, so a failed upload never leaves a tag claiming the beta shipped.
       - name: Push beta tag + create pre-release (per product)
@@ -349,7 +422,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          while IFS=$'\x1f' read -r id pname dist ver label rtag; do
+          while IFS=$'\x1f' read -r id pname dist ver label rtag chan bid; do
             echo "::group::publish $id → $rtag"
             if git rev-parse "refs/tags/$rtag" >/dev/null 2>&1 || git ls-remote --exit-code --tags origin "$rtag" >/dev/null 2>&1; then
               echo "tag $rtag already exists — skipping (idempotent re-run)"; echo "::endgroup::"; continue
@@ -376,7 +449,7 @@ jobs:
             echo
             echo "| Product | Version | Tag | Where |"
             echo "|---|---|---|---|"
-            while IFS=$'\x1f' read -r id pname dist ver label rtag; do
+            while IFS=$'\x1f' read -r id pname dist ver label rtag chan bid; do
               if [ "$dist" = "True" ]; then
                 echo "| ${pname} | ${ver} | \`${rtag}\` | TestFlight |"
               else
