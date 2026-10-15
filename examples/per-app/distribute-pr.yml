@@ -25,7 +25,7 @@ jobs:
     #   use-tuist: true                                 # Tuist-generated project
     #   lfs: true                                       # an LFS-tracked build input
     #   runs-on-build: '"macos-26"'                     # runners default to self-hosted macOS; override to hosted here
-    #   run-tests: true                                 # build + test instead of compile-only
+    #   run-tests: true                                 # also run the tests (every product compiles either way)
     #   test-runner: both
     #   test-destination: 'platform=iOS Simulator,name=iPhone 17'
     #   swift-package-path: Core

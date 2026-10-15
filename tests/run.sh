@@ -221,6 +221,25 @@ grep -B 4 'security create-keychain' "$KCWF" | grep -q 'security delete-keychain
   && pass "a stale keychain from a cancelled run is deleted before the create" \
   || { echo "  FAIL: no tolerant delete-keychain before create-keychain"; FAIL=1; }
 
+echo "== distribute-pr: every product compiles, whether or not tests run =="
+# The tests never stand in for this compile — the swift runner never opens the
+# Xcode project, and the xcodebuild runner builds for the Simulator in Debug,
+# while the beta archives for a device in Release (#10).
+PRWF="$ROOT/.github/workflows/distribute-pr.yml"
+VERIFY="$(awk '$0=="  verify:"{f=1;next} f&&/^  [a-z][a-z0-9_-]*:[ ]*$/{f=0} f' "$PRWF")"
+COMPILE="$(awk 'index($0,"- name: Compile (no signing)"){f=1;next} f&&/^      - name: /{f=0} f' <<<"$VERIFY")"
+[ -n "$COMPILE" ] && pass "verify has a Compile (no signing) step" \
+  || { echo "  FAIL: distribute-pr.yml verify has no 'Compile (no signing)' step"; FAIL=1; }
+grep -q "run-tests" <<<"$VERIFY" \
+  && { echo "  FAIL: verify mentions run-tests — compiling must not depend on testing (#10)"; FAIL=1; } \
+  || pass "verify has no run-tests gate"
+grep -q "^ *if:" <<<"$COMPILE" \
+  && { echo "  FAIL: the Compile step is conditional — a build that can skip itself is how #10 hid"; FAIL=1; } \
+  || pass "the Compile step is unconditional"
+grep -q "CODE_SIGNING_ALLOWED=NO" <<<"$COMPILE" && grep -q 'generic/platform=iOS' <<<"$COMPILE" && ! grep -q "xcodebuild archive" <<<"$COMPILE" \
+  && pass "compiles unsigned for a device, without archiving" \
+  || { echo "  FAIL: the PR compile must build unsigned (fork PRs get no secrets) for generic/platform=iOS, and must not archive"; FAIL=1; }
+
 echo "== actions: nothing left on the deprecated Node 20 runtime =="
 # GitHub is forcing Node 20 actions onto Node 24 and will stop doing so. The
 # cache SUB-actions lagged at v4 (node20) while actions/cache itself was already
