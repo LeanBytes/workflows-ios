@@ -203,6 +203,24 @@ cls "true redundant upload (ITMS-90189) → already-present" 31 \
   "ERROR: [altool] Redundant Binary Upload. There already exists a binary upload with build version '42' (ITMS-90189)" already-present
 cls "opaque altool error → failed" 1 "ERROR: [altool.main] network unreachable" failed
 
+echo "== signing: the ephemeral keychain disarms its auto-lock =="
+# A keychain straight out of `security create-keychain` inherits lock-on-sleep +
+# a 300s idle-lock, which fires mid-archive and hangs codesign on an unlock
+# prompt no headless runner answers (#9). The create must be followed by
+# `set-keychain-settings` (no -t/-l ⇒ no timeout) and an explicit unlock, and
+# preceded by a tolerant delete of a keychain a cancelled run left behind.
+KCWF="$ROOT/.github/workflows/_build-ios.yml"
+KCBODY="$(grep -A 15 'security create-keychain' "$KCWF")"
+grep -q 'security set-keychain-settings' <<<"$KCBODY" && grep -q 'security unlock-keychain' <<<"$KCBODY" \
+  && pass "create-keychain is followed by set-keychain-settings + unlock-keychain" \
+  || { echo "  FAIL: create-keychain is not followed by set-keychain-settings + unlock-keychain"; FAIL=1; }
+grep -qE 'set-keychain-settings.*(-[a-z]*[tl])' <<<"$KCBODY" \
+  && { echo "  FAIL: set-keychain-settings must carry no -t/-l, or the fuse is only lengthened"; FAIL=1; } \
+  || pass "no -t/-l, so no timeout at all"
+grep -B 4 'security create-keychain' "$KCWF" | grep -q 'security delete-keychain build.keychain 2>/dev/null || true' \
+  && pass "a stale keychain from a cancelled run is deleted before the create" \
+  || { echo "  FAIL: no tolerant delete-keychain before create-keychain"; FAIL=1; }
+
 echo "== actions: nothing left on the deprecated Node 20 runtime =="
 # GitHub is forcing Node 20 actions onto Node 24 and will stop doing so. The
 # cache SUB-actions lagged at v4 (node20) while actions/cache itself was already
