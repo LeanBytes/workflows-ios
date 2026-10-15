@@ -13,8 +13,9 @@ Subcommands:
                  when its version is unreleased AND its own product file (or one
                  of its `source-paths`) changed since its last beta. Each product
                  is fully independent: own version line, own `-beta.N` counter.
-  plan-release   Parse a pushed `<id>-v<version>` tag → the single target product,
-                 validated against that product's changelog.versions[0].
+                 "Released" = a bare `<id>-v<version>` / `v<version>` tag exists:
+                 a marker pushed by hand once the version shipped. Nothing builds
+                 on it — the TestFlight beta IS the build that ships.
 
 iOS ships through exactly ONE channel (App Store Connect), so unlike the macOS
 sibling there are no per-channel subsets — a single `has-any` boolean gates the
@@ -29,7 +30,6 @@ Env inputs:
   PRODUCTS_DIR                 product dir (default "Config/products")
   DEF_DISTRIBUTE               default a product inherits when it omits
                                "distribute" (mirrors the orchestrator input)
-  TAG                          (plan-release) the pushed github.ref_name
   GIT_TAGS / BUILD_NUMBER      test-injection overrides
   ASSUME_CHANGED               ids to treat as changed since their last beta,
                                or `*` for all. Stubs git for tests AND backs the
@@ -38,7 +38,6 @@ Env inputs:
 import glob
 import json
 import os
-import re
 import subprocess
 import sys
 
@@ -285,42 +284,6 @@ def cmd_plan_beta(products_dir, defaults):
     emit("test-app-name", records[0]["product-name"])
 
 
-def cmd_plan_release(products_dir, defaults):
-    records = resolve(products_dir, defaults)
-    tag = (os.environ.get("TAG") or "").strip()
-    if not tag:
-        die("TAG (github.ref_name) is required for plan-release")
-    if re.search(r"-(?:beta|alpha)\.", tag):
-        die(f"'{tag}' is a beta/alpha tag and must not reach the release flow — fix the shell tag filter")
-
-    # Each product's tag prefix: 'v' for the primary (empty id), '<id>-v' otherwise.
-    # Match the longest prefix first, so 'pro-v…' binds to 'pro' before the bare 'v…'.
-    candidates = sorted(((tag_prefix(r), r) for r in records), key=lambda c: len(c[0]), reverse=True)
-    hit = None
-    for prefix, r in candidates:
-        if tag.startswith(prefix):
-            ver = tag[len(prefix):]
-            if re.match(r"^\d+\.\d+(\.\d+)?$", ver):
-                hit = (r, ver)
-                break
-    if not hit:
-        die(f"'{tag}' matches no product's release tag — the primary product releases via 'vX.Y.Z', others via '<id>-vX.Y.Z'")
-
-    r, ver = hit
-    pid = r["id"]
-    if ver != r["_version"]:
-        die(f"tag '{tag}' (={ver}) != Config/products/{r['_file']} changelog.versions[0].version (={r['_version']}). Bump the changelog or fix the tag.")
-
-    rec = strip_internal(r)
-    rec.update({"version": ver, "marketing": ver, "artifact-label": f"v{ver}"})
-    emit("target-id", pid)
-    emit("version", ver)
-    emit("artifact-label", f"v{ver}")
-    emit("build-number", build_number())
-    emit("products", compact([rec]))
-    emit("has-any", "true")
-
-
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     products_dir = os.environ.get("PRODUCTS_DIR") or "Config/products"
@@ -329,10 +292,8 @@ def main():
         cmd_discover(products_dir, defaults)
     elif cmd == "plan-beta":
         cmd_plan_beta(products_dir, defaults)
-    elif cmd == "plan-release":
-        cmd_plan_release(products_dir, defaults)
     else:
-        die(f"unknown subcommand '{cmd}' (expected discover | plan-beta | plan-release)")
+        die(f"unknown subcommand '{cmd}' (expected discover | plan-beta)")
 
 
 if __name__ == "__main__":

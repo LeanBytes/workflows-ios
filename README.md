@@ -20,7 +20,7 @@ There is still no Developer ID equivalent: no notarization, no stapling, no Gate
 DMG or ZIP, no Sparkle appcast.
 
 Adding a new app means: dropping one `Config/products/<id>.json` per product, setting 7 secrets, and
-copying three **trigger-only** shell workflows into `.github/workflows/` (they *discover* your
+copying two **trigger-only** shell workflows into `.github/workflows/` (they *discover* your
 products — there is no `products` input). No build/sign/upload code lives in the consumer repo.
 
 ---
@@ -32,14 +32,15 @@ Per-app shell (trigger-only)          Shared orchestrator                       
 distribute-pr.yml           ──→   distribute-pr.yml
   on: pull_request                   discover → verify (compile each product)
 distribute-beta.yml         ──→   distribute-beta.yml
-  on: push branches:[main]           prepare (plan-beta: changelog-driven   ───┐
-                                     cutting set) → build (matrix) →           │  _build-ios.yml
-                                     publish (per product: TestFlight upload,  ├──→  (ios-build-<id>)
-                                     <id>-v<ver>-beta.N tag + pre-release)     │
-distribute-release.yml      ──→   distribute-release.yml                    ───┘
-  on: push tags 'v*' / '<id>-v*'     prepare (plan-release: parse tag →
-       (excl. -beta / -alpha)        scoped product) → build → publish-release
+  on: push branches:[main]           prepare (plan-beta: changelog-driven
+      workflow_dispatch              cutting set) → build (matrix) ──────────────→  _build-ios.yml
+        (force-beta)                 → publish (per product: TestFlight upload       (ios-build-<id>)
+                                     or Ad Hoc S3, <id>-v<ver>-beta.N tag +
+                                     pre-release)
 ```
+
+There is no release workflow: the TestFlight beta is the build that ships — see
+[Shipping to the App Store](#shipping-to-the-app-store).
 
 `_test.yml` is a reusable test runner (iOS Simulator destination) called by `distribute-pr.yml` as a
 red PR check, by `distribute-beta.yml` as a gate, or directly by a per-app nightly shell.
@@ -63,7 +64,7 @@ cannot read another private repo.
 
 ### 2. Copy the shells
 
-Copy the three files from [`examples/per-app/`](examples/per-app/) into your app's
+Copy the two workflow files from [`examples/per-app/`](examples/per-app/) into your app's
 `.github/workflows/`. They declare triggers and secrets and nothing else.
 
 ### 3. Describe each product
@@ -173,9 +174,10 @@ nothing in the pipeline reads it.
 - **Marketing version** is always the bare `X.Y.Z` from `changelog.versions[0].version`. App Store
   Connect rejects a non-`N.N.N` `CFBundleShortVersionString`, so betas do **not** carry a `-beta.N`
   suffix in the binary — the build number disambiguates them, and the git tag records which beta it was.
-- Git tag `<id>-vX.Y.Z` (or bare `vX.Y.Z` for the primary) marks a release. Pushing it triggers the
-  release flow; CI validates it matches that product's `changelog.versions[0].version`.
-- Git tag `<id>-vX.Y.Z-beta.N` marks the Nth beta. Auto-pushed per product by `distribute-beta.yml`.
+- Git tag `<id>-vX.Y.Z-beta.N` marks the Nth beta. Auto-pushed per product by `distribute-beta.yml`;
+  its message and the pre-release title name the build number.
+- Git tag `<id>-vX.Y.Z` (or bare `vX.Y.Z` for the primary) is an optional marker that X.Y.Z shipped.
+  You push it by hand and nothing builds on it; while it exists, that product is idle (no betas).
 
 **Beta is changelog-driven (the gate).** On every push to `main`, a product cuts its next beta **only
 when** (a) its `changelog.versions[0]` version isn't released (no `<id>-vX.Y.Z` tag) AND (b) its own
@@ -188,26 +190,49 @@ although nothing changed — for a TestFlight build about to expire (90 days), t
 profile renewal, or a toolchain bump. It never overrides "already released"; bump the changelog for
 that. The shell needs the `workflow_dispatch` block from the example.
 
+## Shipping to the App Store
+
+There is no release build. The TestFlight beta **is** the build that ships, so the build you tested is
+the build you submit.
+
+1. A push to `main` cuts a beta. It shows up in TestFlight as `X.Y.Z (build)`, and its pre-release
+   `<id>-vX.Y.Z-beta.N (build …)` names the same build number, so you can get from App Store Connect
+   back to the tag and the commit.
+2. When it's good: in App Store Connect, add that build to version X.Y.Z and submit it for review.
+   If review rejects it, push the fix — it becomes the next X.Y.Z beta, and you submit that one.
+3. Once X.Y.Z is approved, start the next version: bump `changelog.versions[0].version`. App Store
+   Connect rejects every further X.Y.Z upload after approval (ITMS-90186), so the next beta fails
+   until you do.
+
+Optionally push a bare `vX.Y.Z` (or `<id>-vX.Y.Z`) tag as a marker: it records the ship and idles the
+product until its version is bumped. You need it only when a shipped product shares `source-paths`
+with one still in development, so a shared change doesn't try to upload another X.Y.Z build.
+
+An **Ad Hoc** product skips step 2 — its beta is live on S3 the moment it is cut.
+
+This deliberately differs from `workflows-macos`, which keeps a separate release build because
+Sparkle's beta/stable channels and the `-beta.N` in the Direct binary need one. iOS has neither.
+
 ## Publish ordering
 
-Fail-safe: the git tag and the GitHub Release come **last**, so nothing ever claims a build shipped
-when the upload failed.
+Fail-safe: the git tag and the GitHub pre-release come **last**, so nothing ever claims a build
+shipped when the upload failed.
 
 ```
 1. Render release notes from the product's inline .changelog
-2. (gate) xcrun altool --upload-app --type ios   →  App Store Connect
-3. beta only: git push <id>-v<ver>-beta.N
-4. gh release create        ← only if every prior step succeeded
+2. (gate) xcrun altool --upload-app --type ios   →  App Store Connect   (Ad Hoc: IPA + manifest → S3)
+3. git push <id>-v<ver>-beta.N
+4. gh release create --prerelease   ← only if every prior step succeeded
 ```
 
-There is no asset upload on the GitHub Release — an App-Store-only product has no downloadable
+There is no asset upload on the GitHub pre-release — an App-Store-only product has no downloadable
 artifact. The `.ipa` is available as a workflow artifact for the retention window.
 
-**Release is upload-only.** Creating the App Store version and hitting *Submit for Review* stays
-manual in App Store Connect.
+**Submission is manual.** Creating the App Store version and hitting *Submit for Review* happen in
+App Store Connect.
 
-**TestFlight is upload-only too.** Groups, tester assignment, auto-distribution and "What to Test"
-are configured in App Store Connect.
+**TestFlight is upload-only.** Groups, tester assignment, auto-distribution and "What to Test" are
+configured in App Store Connect.
 
 ## App-side requirements
 
@@ -247,7 +272,7 @@ runs-on-build: '["self-hosted","agent-alex"]' # a specific self-hosted runner
 A bare `macos-26` is **not** valid. An app with no self-hosted macOS runner **must** override these,
 or its jobs queue forever.
 
-`runs-on-prepare` covers the cheap coordination jobs — `discover` on PRs, `prepare` on beta/release,
+`runs-on-prepare` covers the cheap coordination jobs — `discover` on PRs, `prepare` on beta,
 and (passed through automatically) `_test.yml`'s `gate`. They run `actions/checkout` plus `python3`
 and never touch Xcode, so a hosted `'"ubuntu-latest"'` is the cheapest correct value there. An app on
 hosted runners overrides all three:
@@ -258,6 +283,18 @@ with:
   runs-on-build:   '"macos-26"'
   runs-on-publish: '"macos-26"'   # altool — must be macOS
 ```
+
+## Upgrading from v0.2.x
+
+v0.3.0 removes the release build (see [Shipping to the App Store](#shipping-to-the-app-store)). In
+each app repo:
+
+1. **Delete** `.github/workflows/distribute-release.yml` — don't bump its pin. At `@v0.2.0` a pushed
+   `vX.Y.Z` marker tag would still start the old release build; at `@v0.3.0` the workflow is gone.
+2. Bump the remaining shells to `@v0.3.0`.
+3. Optional: copy the `workflow_dispatch` block and the `force-beta` line from
+   [`examples/per-app/distribute-beta.yml`](examples/per-app/distribute-beta.yml) to allow manual
+   re-cuts.
 
 ## Development
 

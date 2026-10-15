@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Classify the result of `xcrun altool --upload-app`.
 #
-# Sourced by the publish steps of distribute-beta.yml and distribute-release.yml
-# so both paths share one definition of "did this upload actually land?" — the
-# logic used to be duplicated inline in each, and drifted into the same bug twice.
+# Sourced by distribute-beta.yml's publish step and by tests/run.sh, so the
+# workflow and its tests share one definition of "did this upload actually
+# land?" — the logic used to be duplicated inline in each publish path (there
+# was a release path too, until #14), and drifted into the same bug twice.
 #
 #   classify_upload <altool-exit-code> <altool-output>  →  one of:
 #     accepted         ASC took the binary

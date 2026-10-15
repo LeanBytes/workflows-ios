@@ -111,32 +111,11 @@ grep -rq "CHANGED_PRODUCTS" "$ROOT/.github" "$ROOT/CLAUDE.md" "$ROOT/README.md" 
   && { echo "  FAIL: CHANGED_PRODUCTS still referenced — it was renamed to ASSUME_CHANGED"; FAIL=1; } \
   || pass "no stale CHANGED_PRODUCTS references"
 
-echo "== plan-release =="
-CAP PRODUCTS_DIR="$MULTI" TAG="main-v2.14.0" BUILD_NUMBER="x" python3 "$PY" plan-release
-[ $RC -eq 0 ] && pass "main release exit 0" || bad "main release exit"
-line "target-id=main" "target-id=main"
-line "version=2.14.0" "version=2.14.0"
-line "artifact-label=v2.14.0" "artifact-label=v2.14.0"
-line "has-any=true" "has-any=true"
-jok "products is the single scoped target" \
-  'p=json.loads(o["products"]); assert len(p)==1 and p[0]["id"]=="main"; assert p[0]["marketing"]=="2.14.0"'
-
-CAP PRODUCTS_DIR="$MULTI" TAG="companion-v1.3.0" BUILD_NUMBER="x" python3 "$PY" plan-release
-[ $RC -eq 0 ] && pass "companion release exit 0" || bad "companion release exit"
-line "target-id=companion" "target-id=companion"
-
-for T in "main-v9.9.9" "v2.14.0" "bogus-v1.0.0" "main-v2.14.0-beta.1"; do
-  CAP PRODUCTS_DIR="$MULTI" TAG="$T" python3 "$PY" plan-release
-  [ $RC -ne 0 ] && pass "reject '$T'" || bad "'$T' should fail (rc=$RC)"
-done
-
 echo "== single-product fixture =="
 CAP PRODUCTS_DIR="$SINGLE" python3 "$PY" discover
 line "single ids" "ids=app"
 CAP PRODUCTS_DIR="$SINGLE" GIT_TAGS="" BUILD_NUMBER="x" python3 "$PY" plan-beta
 jok "app → beta.1" 'b=json.loads(o["beta-products"]); assert b[0]["release-tag"]=="app-v1.0.0-beta.1"'
-CAP PRODUCTS_DIR="$SINGLE" TAG="app-v1.0.0" BUILD_NUMBER="x" python3 "$PY" plan-release
-line "app release target" "target-id=app"
 
 echo "== mixed: primary (empty id → bare v*) + prefixed pro =="
 CAP PRODUCTS_DIR="$MIXED" python3 "$PY" discover
@@ -146,13 +125,14 @@ jok "base → bare v1.0.0-beta.1; pro → pro-v2.0.0-beta.1" \
   'b={x["id"]:x for x in json.loads(o["beta-products"])}; assert b["base"]["release-tag"]=="v1.0.0-beta.1", b["base"]["release-tag"]; assert b["pro"]["release-tag"]=="pro-v2.0.0-beta.1", b["pro"]["release-tag"]'
 jok "per-product cert secret carried (base overrides, pro defaults)" \
   'b={x["id"]:x for x in json.loads(o["beta-products"])}; assert b["base"]["cert-secret"]=="APPLE_DISTR_P12_ALT_BASE64"; assert b["base"]["cert-password-secret"]=="APPLE_DISTR_PASSWORD_ALT"; assert b["pro"]["cert-secret"]==""'
-CAP PRODUCTS_DIR="$MIXED" TAG="v1.0.0" BUILD_NUMBER="x" python3 "$PY" plan-release
-line "bare tag → primary" "target-id=base"
-CAP PRODUCTS_DIR="$MIXED" TAG="pro-v2.0.0" BUILD_NUMBER="x" python3 "$PY" plan-release
-line "prefixed tag → pro (longest prefix wins over bare 'v')" "target-id=pro"
+# A shipped version's marker tag (pushed by hand — nothing builds on it, #14)
+# idles exactly that product, never its sibling.
 CAP PRODUCTS_DIR="$MIXED" GIT_TAGS="v1.0.0" BUILD_NUMBER="x" python3 "$PY" plan-beta
 jok "base released (bare v1.0.0) → idle; only pro cuts" \
   'b=[x["id"] for x in json.loads(o["beta-products"])]; assert b==["pro"], b'
+CAP PRODUCTS_DIR="$MIXED" GIT_TAGS="pro-v2.0.0" BUILD_NUMBER="x" python3 "$PY" plan-beta
+jok "pro released (pro-v2.0.0) → idle; only base cuts" \
+  'b=[x["id"] for x in json.loads(o["beta-products"])]; assert b==["base"], b'
 
 echo "== validation: two empty-id products → hard error =="
 CAP PRODUCTS_DIR="$DUAL" python3 "$PY" discover

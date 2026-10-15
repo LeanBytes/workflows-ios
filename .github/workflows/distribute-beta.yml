@@ -3,7 +3,13 @@
 # for each product whose OWN file (or its source-paths) changed since its last
 # beta AND whose version isn't released yet, builds each one, uploads the .ipa
 # to App Store Connect (TestFlight), then pushes each product's own
-# `<id>-v<ver>-beta.N` tag + a notes-only GitHub pre-release.
+# `<id>-v<ver>-beta.N` tag + a notes-only GitHub pre-release, both naming the
+# build number.
+#
+# There is no release build (#14). The beta IS the build that ships: submit the
+# tested build in App Store Connect and, once it is approved, bump the changelog
+# version — or push a bare `<id>-v<ver>` / `v<ver>` marker tag, which idles that
+# product here. An Ad Hoc beta is live on S3 the moment it is cut.
 #
 # iOS ships through ONE channel, so unlike the macOS sibling there is no
 # direct/store split: a single `has-any` boolean gates the build job (an empty
@@ -20,7 +26,7 @@
 #     workflow_dispatch:   # + a force-beta checkbox — see the example shell
 #   jobs:
 #     beta:
-#       uses: LeanBytes/workflows-ios/.github/workflows/distribute-beta.yml@v0.2.0
+#       uses: LeanBytes/workflows-ios/.github/workflows/distribute-beta.yml@v0.3.0
 #       secrets: ...   # explicit block — see examples/per-app/distribute-beta.yml
 #       with:
 #         force-beta: ${{ inputs.force-beta || false }}
@@ -188,7 +194,7 @@ jobs:
   test:
     if: inputs.run-tests
     needs: prepare
-    uses: LeanBytes/workflows-ios/.github/workflows/_test.yml@v0.2.0
+    uses: LeanBytes/workflows-ios/.github/workflows/_test.yml@v0.3.0
     with:
       test-runner: ${{ inputs.test-runner }}
       runs-on: ${{ inputs.runs-on-build }}
@@ -219,7 +225,7 @@ jobs:
       fail-fast: false
       matrix:
         product: ${{ fromJSON(needs.prepare.outputs.products) }}
-    uses: LeanBytes/workflows-ios/.github/workflows/_build-ios.yml@v0.2.0
+    uses: LeanBytes/workflows-ios/.github/workflows/_build-ios.yml@v0.3.0
     with:
       version: ${{ matrix.product.marketing }}        # bare X.Y.Z — ASC rejects suffixes
       build-number: ${{ needs.prepare.outputs.build-number }}
@@ -440,15 +446,18 @@ jobs:
             if git rev-parse "refs/tags/$rtag" >/dev/null 2>&1 || git ls-remote --exit-code --tags origin "$rtag" >/dev/null 2>&1; then
               echo "tag $rtag already exists — skipping (idempotent re-run)"; echo "::endgroup::"; continue
             fi
-            git tag -a "$rtag" -m "Beta $rtag"
+            # The build number goes on both: App Store Connect lists a build as
+            # "X.Y.Z (build)", and since this beta is what gets submitted (#14),
+            # that is the only way back from ASC to the tag and the commit.
+            git tag -a "$rtag" -m "Beta $rtag (build $BUILD_NUMBER)"
             git push origin "$rtag"
-            NOTES_ARG=(--notes "Beta $rtag ($pname $ver)")
+            NOTES_ARG=(--notes "Beta $rtag ($pname $ver, build $BUILD_NUMBER)")
             if [ -f "/tmp/notes-$id.md" ] && [ -s "/tmp/notes-$id.md" ]; then
               NOTES_ARG=(--notes-file "/tmp/notes-$id.md")
             fi
             # No `gh release upload` — an App-Store-only product has no
             # downloadable asset; the build lives in TestFlight.
-            gh release create "$rtag" --repo "$REPO" --title "$rtag" --prerelease "${NOTES_ARG[@]}"
+            gh release create "$rtag" --repo "$REPO" --title "$rtag (build $BUILD_NUMBER)" --prerelease "${NOTES_ARG[@]}"
             echo "pushed $rtag + pre-release ✅"; echo "::endgroup::"
           done < /tmp/products.tsv
 
@@ -462,13 +471,21 @@ jobs:
             echo
             echo "| Product | Version | Tag | Where |"
             echo "|---|---|---|---|"
+            testflight=
             while IFS=$'\x1f' read -r id pname dist ver label rtag chan bid; do
-              if [ "$dist" = "True" ]; then
-                echo "| ${pname} | ${ver} | \`${rtag}\` | TestFlight |"
-              else
+              if [ "$dist" != "True" ]; then
                 echo "| ${pname} | ${ver} | \`${rtag}\` | (not distributed) |"
+              elif [ "$chan" = "ad-hoc" ]; then
+                echo "| ${pname} | ${ver} | \`${rtag}\` | Ad Hoc (S3) — live |"
+              else
+                echo "| ${pname} | ${ver} | \`${rtag}\` | TestFlight |"; testflight=1
               fi
             done < /tmp/products.tsv
+            if [ -n "$testflight" ]; then
+              echo
+              echo "To ship it: in App Store Connect, add build \`${BUILD_NUMBER}\` to the version and"
+              echo "submit it for review. Once it is approved, bump the product's changelog version."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
