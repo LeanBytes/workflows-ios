@@ -203,6 +203,40 @@ cls "true redundant upload (ITMS-90189) → already-present" 31 \
   "ERROR: [altool] Redundant Binary Upload. There already exists a binary upload with build version '42' (ITMS-90189)" already-present
 cls "opaque altool error → failed" 1 "ERROR: [altool.main] network unreachable" failed
 
+echo "== changelog: every type the apps render reaches the notes =="
+# The apps' What's New views know feat/fix/core/lang/release. CI knew three, so
+# six MacPacker releases shipped without their lang items (workflows-macos#17,
+# here #11). chore stays a silent drop; anything else must be dropped LOUDLY,
+# never silently, and never onto stdout — stdout IS the release notes.
+CL="$ROOT/.github/scripts/changelog-from-json.sh"
+cat > /tmp/cl-types.json <<'JSON'
+{"versions":[{"version":"1.0.0","items":[
+  {"type":"feat","title":{"en":"F"}},   {"type":"fix","title":{"en":"B"}},
+  {"type":"core","title":{"en":"C"}},   {"type":"lang","title":{"en":"L"}},
+  {"type":"release","title":{"en":"A"}},{"type":"chore","title":{"en":"Internal"}},
+  {"type":"l10n","title":{"en":"Typo"}}
+]}]}
+JSON
+SUM=/tmp/cl-summary.md; : > "$SUM"
+OUT="$(CHANGELOG_PATH=/tmp/cl-types.json VERSION=1.0.0 GITHUB_STEP_SUMMARY="$SUM" bash "$CL" 2>/tmp/cl.err)"
+for sec in "New Features" "Bug Fixes" "Improvements" "Localization" "Announcements"; do
+  grep -qxF "### $sec" <<<"$OUT" && pass "renders ### $sec" \
+    || { echo "  FAIL: '### $sec' missing from the notes"; FAIL=1; }
+done
+grep -q "Internal" <<<"$OUT" && { echo "  FAIL: chore leaked into customer-facing notes"; FAIL=1; } \
+  || pass "chore dropped from the notes"
+grep -q "chore" /tmp/cl.err && { echo "  FAIL: chore warned about; it is a deliberate silent drop"; FAIL=1; } \
+  || pass "chore dropped silently (no warning)"
+grep -q "Typo" <<<"$OUT" && { echo "  FAIL: unknown type 'l10n' rendered; it must be dropped"; FAIL=1; } \
+  || pass "unknown type dropped from the notes"
+grep -q "::warning::.*l10n" /tmp/cl.err && pass "unknown type warned on stderr" \
+  || { echo "  FAIL: unknown type 'l10n' dropped silently — the #11 bug"; FAIL=1; }
+grep -q "l10n" "$SUM" && pass "unknown type reaches \$GITHUB_STEP_SUMMARY" \
+  || { echo "  FAIL: unknown type missing from the step summary"; FAIL=1; }
+grep -q "::warning::" <<<"$OUT" && { echo "  FAIL: a warning reached stdout — stdout is the release notes"; FAIL=1; } \
+  || pass "warnings never touch stdout"
+rm -f /tmp/cl-types.json "$SUM" /tmp/cl.err
+
 echo "== signing: the ephemeral keychain disarms its auto-lock =="
 # A keychain straight out of `security create-keychain` inherits lock-on-sleep +
 # a 300s idle-lock, which fires mid-archive and hangs codesign on an unlock

@@ -27,8 +27,9 @@ each app repo carries one `Config/products/<id>.json` per product (identity + in
 ## Relationship to workflows-macos
 
 `products.py` is a **fork and reduction** of the macOS one (~313 lines vs 374), not a shared copy.
-`changelog-from-json.sh`, `classify-upload.sh`, `jira_client.py` and `create_test_ticket.py` are
-byte-identical copies. `run-tests.sh` differs by exactly one thing: a `TEST_DESTINATION` env var
+`classify-upload.sh` and `create_test_ticket.py` are byte-identical copies; `changelog-from-json.sh`
+and `jira_client.py` are copies that differ only in wording naming macOS-only things (the appcast,
+the repo name). `run-tests.sh` differs by exactly one thing: a `TEST_DESTINATION` env var
 defaulting to an iOS Simulator instead of a hardcoded `platform=macOS`.
 
 When fixing a bug in a copied file, check whether `workflows-macos` has the same bug.

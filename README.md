@@ -161,8 +161,9 @@ base64 -i AuthKey_XXXXXXXXXX.p8  | pbcopy   # → ASC_KEY_BASE64
 ```
 
 Changelog item `type` buckets into the rendered notes as `feat → New Features`, `fix → Bug Fixes`,
-`core → Improvements`; `chore` and unknown types are dropped. `issues` is pure provenance — nothing
-in the pipeline reads it.
+`core → Improvements`, `lang → Localization`, `release → Announcements`. `chore` is dropped silently;
+any other type is dropped too, but with a warning on the run page. `issues` is pure provenance —
+nothing in the pipeline reads it.
 
 ## Versioning
 
