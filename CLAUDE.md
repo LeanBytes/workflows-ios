@@ -143,12 +143,14 @@ These are all bugs someone already paid for. Don't "clean them up".
 - **`runs-on*` inputs are JSON-encoded** and consumed with `fromJSON()`. A bare `macos-26` is invalid.
 - **Repo-wide `concurrency`, `cancel-in-progress: false`** on beta — racing pushes would otherwise
   produce duplicate `-beta.N` tags.
+- **An empty `ASSUME_CHANGED` counts as unset** (`if inj:`, never `is not None`). `force-beta` off
+  renders to `""`; read as "nothing changed", it would silently stop every beta on every push.
 
 ## Editing patterns
 
 - **All workflow logic lives here; per-app shells only declare triggers and secrets.** When iterating
   on logic, edit the workflows in this repo and bump the tag. Don't fork logic into per-app shells.
-- **`products.py` is offline-testable** via injected `GIT_TAGS` / `CHANGED_PRODUCTS` / `BUILD_NUMBER`
+- **`products.py` is offline-testable** via injected `GIT_TAGS` / `ASSUME_CHANGED` / `BUILD_NUMBER`
   / `PRODUCTS_DIR` / `TAG`. Add a case to `tests/run.sh` for any behaviour change — it runs in about a
   second and needs no git repo or network.
 - **When bumping the tag, also bump the `@vX.Y.Z` callouts inside the shared workflows AND in

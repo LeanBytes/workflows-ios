@@ -121,7 +121,8 @@ Three things bite here, all of them silently:
 
 No App Store Connect app record is required for this channel — only a registered App ID, the device
 UDIDs, and the Ad Hoc profile. **The profile expires after one year, and the installed app then stops
-launching**, so an annual rebuild plus a re-tap on every device is not optional.
+launching**, so an annual rebuild plus a re-tap on every device is not optional: renew the profile,
+update its secret, then run the beta shell with *force-beta* (see [Versioning](#versioning)).
 
 Encode the p12 and profile like this:
 
@@ -180,6 +181,12 @@ nothing in the pipeline reads it.
 when** (a) its `changelog.versions[0]` version isn't released (no `<id>-vX.Y.Z` tag) AND (b) its own
 `Config/products/<id>.json` — or one of its `source-paths` — changed since its last beta. So editing
 one product's changelog betas only that product, and a released (idle) product is skipped, not blocked.
+
+**Re-cut without a change: `force-beta`.** Run the beta shell by hand (*Actions → Distribute Beta →
+Run workflow*) and tick *force-beta*: every product whose version isn't released cuts its next beta
+although nothing changed — for a TestFlight build about to expire (90 days), the yearly Ad Hoc
+profile renewal, or a toolchain bump. It never overrides "already released"; bump the changelog for
+that. The shell needs the `workflow_dispatch` block from the example.
 
 ## Publish ordering
 

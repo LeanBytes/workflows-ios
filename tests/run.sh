@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Offline unit tests for .github/scripts/products.py — no git repo, no network.
-# Git is stubbed via GIT_TAGS / CHANGED_PRODUCTS; the timestamp via BUILD_NUMBER.
+# Git is stubbed via GIT_TAGS / ASSUME_CHANGED; the timestamp via BUILD_NUMBER.
 # Run from anywhere:  bash tests/run.sh
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -69,7 +69,7 @@ jok "both → beta.1" \
   'b=json.loads(o["beta-products"]); assert sorted(x["id"] for x in b)==["companion","main"]; assert o["has-any"]=="true"'
 
 echo "== plan-beta: push 2 — only main changed =="
-CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0-beta.1 companion-v1.3.0-beta.1" CHANGED_PRODUCTS="main" BUILD_NUMBER="x" python3 "$PY" plan-beta
+CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0-beta.1 companion-v1.3.0-beta.1" ASSUME_CHANGED="main" BUILD_NUMBER="x" python3 "$PY" plan-beta
 jok "only main → beta.2; companion unchanged → skipped" \
   'b=json.loads(o["beta-products"]); assert [x["id"] for x in b]==["main"], b; assert b[0]["release-tag"]=="main-v2.14.0-beta.2"'
 
@@ -77,6 +77,39 @@ echo "== plan-beta: everything released → empty cutting set =="
 CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0 companion-v1.3.0" BUILD_NUMBER="x" python3 "$PY" plan-beta
 line "nothing cuts → has-any=false gates the build job" "has-any=false"
 jok "beta-products is an empty array, not absent" 'assert json.loads(o["beta-products"])==[]'
+
+echo "== force-beta: ASSUME_CHANGED overrides \"nothing changed\", not \"already shipped\" =="
+# Backs the orchestrator's force-beta checkbox. `*` = every product; a list
+# names them. Empty MUST count as unset, or the off position of the switch
+# would silently stop every beta on every normal push (#13).
+CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0-beta.1 companion-v1.3.0-beta.1" ASSUME_CHANGED="*" BUILD_NUMBER="x" python3 "$PY" plan-beta
+jok "'*' forces every product" \
+  'b={x["id"]:x for x in json.loads(o["beta-products"])}; assert sorted(b)==["companion","main"], b; assert b["main"]["release-tag"]=="main-v2.14.0-beta.2"'
+
+# Empty must behave EXACTLY like unset, whatever git then says — that is the
+# invariant, and it holds without depending on this repo's tag state.
+E=$(PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0-beta.1" ASSUME_CHANGED="" BUILD_NUMBER="x" python3 "$PY" plan-beta 2>/dev/null)
+U=$(PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0-beta.1"                     BUILD_NUMBER="x" python3 "$PY" plan-beta 2>/dev/null)
+[ "$E" = "$U" ] && pass "empty ASSUME_CHANGED behaves exactly like unset" \
+  || { echo "  FAIL: ASSUME_CHANGED='' differs from unset — the off position of force-beta"; FAIL=1; }
+
+CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0 companion-v1.3.0" ASSUME_CHANGED="*" BUILD_NUMBER="x" python3 "$PY" plan-beta
+line "a released version is NOT forced — it stays idle" "has-any=false"
+grep -q "::warning::.*force-beta was set, but" /tmp/pd.err \
+  && pass "forcing a released version warns loudly instead of going quietly green" \
+  || { echo "  FAIL: forcing an already-released version must ::warning::, not ::notice::"; FAIL=1; }
+
+# The wiring: `*` when the box is ticked, "" when it is not — never a value that
+# products.py would read as "nothing changed".
+BWF="$ROOT/.github/workflows/distribute-beta.yml"
+grep -q "^      force-beta:" "$BWF" && pass "distribute-beta.yml declares force-beta" \
+  || { echo "  FAIL: distribute-beta.yml has no force-beta input"; FAIL=1; }
+grep -qF "ASSUME_CHANGED: \${{ inputs.force-beta && '*' || '' }}" "$BWF" \
+  && pass "force-beta wires to ASSUME_CHANGED ('*' on, '' off)" \
+  || { echo "  FAIL: distribute-beta.yml must set ASSUME_CHANGED from force-beta"; FAIL=1; }
+grep -rq "CHANGED_PRODUCTS" "$ROOT/.github" "$ROOT/CLAUDE.md" "$ROOT/README.md" \
+  && { echo "  FAIL: CHANGED_PRODUCTS still referenced — it was renamed to ASSUME_CHANGED"; FAIL=1; } \
+  || pass "no stale CHANGED_PRODUCTS references"
 
 echo "== plan-release =="
 CAP PRODUCTS_DIR="$MULTI" TAG="main-v2.14.0" BUILD_NUMBER="x" python3 "$PY" plan-release
@@ -149,7 +182,7 @@ CAP PRODUCTS_DIR="$BADDIR/Config/products" python3 "$PY" discover
 rm -rf "$BADDIR"
 
 echo "== source-paths: a code-only change cuts a beta =="
-# Real git repos, real `git diff` — CHANGED_PRODUCTS is deliberately NOT set, so
+# Real git repos, real `git diff` — ASSUME_CHANGED is deliberately NOT set, so
 # these exercise the actual diff path rather than the test stub.
 # $1 = dir, $2 = the "source-paths" JSON line (empty to omit it).
 mkrepo() {
@@ -184,6 +217,12 @@ line "code-only change WITHOUT source-paths → nothing cuts" "has-any=false"
 { grep -q '::warning::' /tmp/pd.err && grep -q 'source-paths' /tmp/pd.err; } \
   && pass "the silent skip is now a warning naming the fix" \
   || bad "expected a ::warning:: mentioning source-paths; got: $(cat /tmp/pd.err)"
+# The same repo, forced: real git says "nothing changed", and force-beta
+# overrides exactly that (#13). The stubbed cases above cannot show this —
+# outside a repo a failing `git diff` also reads as "changed".
+CAP ASSUME_CHANGED='*' bash -c "cd '$WITHOUT' && PRODUCTS_DIR='$WITHOUT/Config/products' GIT_TAGS='app-v1.0.0-beta.1' BUILD_NUMBER=x python3 '$PY' plan-beta"
+jok "force-beta cuts beta.2 where real git saw no change" \
+  'b=json.loads(o["beta-products"]); assert [x["release-tag"] for x in b]==["app-v1.0.0-beta.2"], b'
 rm -rf "$WITH" "$WITHOUT"
 
 echo "== classify_upload: altool outcome classification =="

@@ -1,5 +1,6 @@
 # ── Per-app beta shell (iOS) ─────────────────────────────────────────────────
-# Copy to .github/workflows/distribute-beta.yml. Fires on every push to main.
+# Copy to .github/workflows/distribute-beta.yml. Fires on every push to main,
+# and on a manual run (workflow_dispatch, below).
 # The orchestrator discovers Config/products/<id>.json and cuts a beta for each
 # product whose OWN file (or its source-paths) changed since its last beta.
 # Each product uploads to TestFlight, then pushes its own
@@ -10,6 +11,20 @@ name: Distribute Beta
 on:
   push:
     branches: [main]
+
+  # Manual re-cut. Normally a beta only happens when a product's file (or its
+  # source-paths) changed since its last beta; tick the box to ship one anyway —
+  # a TestFlight build about to expire (90 days), the yearly Ad Hoc profile
+  # renewal (update the profile secret first), a toolchain or dependency bump,
+  # a flaky runner. It does NOT override "already released": bump the changelog
+  # version for that. Run it against main: it pushes a beta tag and a
+  # pre-release.
+  workflow_dispatch:
+    inputs:
+      force-beta:
+        description: "Cut a beta even if nothing changed"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -35,8 +50,12 @@ jobs:
       ASC_KEY_BASE64:               ${{ secrets.ASC_KEY_BASE64 }}
       SHARED_WORKFLOWS_TOKEN:       ${{ secrets.SHARED_WORKFLOWS_TOKEN }}
       # JIRA_API_TOKEN:             ${{ secrets.JIRA_API_TOKEN }}   # if run-tests
+    with:
+      # false on a push (the input does not exist there), true only when the box
+      # is ticked on a manual run. Keep this line even if you add nothing else.
+      force-beta: ${{ inputs.force-beta || false }}
     # ── Defaults a product file inherits when it omits them ─────────────────
-    # with:
+    # Uncomment what you need — they belong under the `with:` above.
     #   distribute: false                # build + sign only, never touch ASC (dry run)
     #   use-tuist: true
     #   lfs: true
