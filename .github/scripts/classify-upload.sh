@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Classify the result of `xcrun altool --upload-app`.
 #
-# Sourced by distribute-beta.yml's publish step and by tests/run.sh, so the
+# Sourced by distribute.yml's publish step and by tests/run.sh, so the
 # workflow and its tests share one definition of "did this upload actually
 # land?" — the logic used to be duplicated inline in each publish path (there
 # was a release path too, until #14), and drifted into the same bug twice.

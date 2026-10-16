@@ -21,19 +21,19 @@ differ — so there is **one build callee and one `has-any` gate**, where macOS 
 (`direct` + `store`). Don't reintroduce the split.
 
 Layout: `.github/workflows/_build-ios.yml` is the internal callee;
-`.github/workflows/distribute-{pr,beta}.yml` are the orchestrators; `_test.yml` is a reusable
-test runner; `.github/scripts/` holds `products.py` (the discovery/beta brain) plus helpers;
+`.github/workflows/distribute-pr.yml` and `distribute.yml` are the orchestrators; `_test.yml` is a
+reusable test runner; `.github/scripts/` holds `products.py` (the discovery/planning brain) plus helpers;
 each app repo carries one `Config/products/<id>.json` per product (identity + inline changelog);
 `examples/per-app/` has the trigger-only shell templates; `tests/` holds the offline suite.
 
 ## Relationship to workflows-macos
 
-`products.py` is a **fork and reduction** of the macOS one (~300 lines vs ~390, no `plan-release`),
-not a shared copy. `create_test_ticket.py` is a byte-identical copy; `changelog-from-json.sh`,
-`classify-upload.sh` and `jira_client.py` are copies that differ only in wording naming macOS-only
-things (the appcast, the release workflow, the repo name). `run-tests.sh` differs by exactly one
-thing: a `TEST_DESTINATION` env var defaulting to an iOS Simulator instead of a hardcoded
-`platform=macOS`.
+`products.py` is a **fork and reduction** of the macOS one (~300 lines vs ~390; one `plan` where
+macOS has `plan-beta` + `plan-release`), not a shared copy. `create_test_ticket.py` is a
+byte-identical copy; `changelog-from-json.sh`, `classify-upload.sh` and `jira_client.py` are copies
+that differ only in wording naming macOS-only things (the appcast, the release workflow, the
+workflow names, the repo name). `run-tests.sh` differs by exactly one thing: a `TEST_DESTINATION`
+env var defaulting to an iOS Simulator instead of a hardcoded `platform=macOS`.
 
 When fixing a bug in a copied file, check whether `workflows-macos` has the same bug.
 
@@ -70,29 +70,32 @@ truth for that product's next-to-ship version and release notes. Git tags mark s
 `<id>-vX.Y.Z`. At most one product per repo may omit `id`.
 
 **Marketing version is always the bare `X.Y.Z`** — App Store Connect rejects a non-`N.N.N`
-`CFBundleShortVersionString`, so unlike macOS's Sparkle channel there is no `-beta.N` in the binary.
-The timestamp build number disambiguates betas; the git tag records which beta it was. (macOS splits
-this per channel; here the two collapse, and `products.py` emits a single `marketing` key.)
+`CFBundleShortVersionString`. The timestamp build number tells builds of one version apart, and each
+build's git tag is `<id>-vX.Y.Z-<build number>` — the pair ASC shows as `X.Y.Z (build)`. (macOS
+splits the version per channel; here the two collapse, and `products.py` emits a single `marketing`
+key.)
 
-**Gate (changelog-driven, per product):** on push→main a product cuts a beta only when its version is
-unreleased AND its own file (or one of its `source-paths`) changed since its last beta. No
-cross-product coupling — editing one product's changelog never cuts another's beta, and a released
-(idle) product is skipped, not blocked. `force-beta` (a `workflow_dispatch` checkbox) overrides the
+**Gate (changelog-driven, per product):** on push→main a product builds only when its version is
+unreleased AND its own file (or one of its `source-paths`) changed since its newest build tag. No
+cross-product coupling — editing one product's changelog never builds another, and a released
+(idle) product is skipped, not blocked. `force` (a `workflow_dispatch` checkbox) overrides the
 "changed" half, never the "unreleased" half.
 
-**There is no release build (v0.3.0, #14).** The TestFlight beta is what ships: the human adds the
-tested build to the App Store version in ASC and submits it. "Released" means a bare `vX.Y.Z` /
-`<id>-vX.Y.Z` tag exists — an optional marker pushed by hand; nothing builds on it. This is a
-deliberate divergence from macOS, whose Sparkle channels and `-beta.N` Direct binary need the split.
-On iOS a release build was the same binary kind with a new build number, untested, and broken for Ad
-Hoc. Don't reintroduce `distribute-release.yml`.
+**No betas, no release build (v0.3.0 #14, v0.4.0 #15).** Every build goes to TestFlight (Ad Hoc: S3),
+and the tested build is what ships: the human adds it to the App Store version in ASC and submits it.
+"Released" means a bare `vX.Y.Z` / `<id>-vX.Y.Z` tag exists — an optional marker pushed by hand;
+nothing builds on it. This is a deliberate divergence from macOS, whose Sparkle channels and
+`-beta.N` Direct binary need the split. On iOS, iPadOS, tvOS and visionOS a release build was the
+same binary kind with a new build number, untested, and broken for Ad Hoc — and a "beta" is just a
+build. Don't reintroduce `distribute-release.yml`, beta names, `-beta.N` tags or pre-releases. Old
+`-beta.N` tags are deliberately not read as builds: an app's first push after upgrading builds once.
 
 ## Scope decisions (deliberate omissions)
 
 - **`distribute-alpha.yml` — skipped permanently, not deferred.** A TestFlight *internal* group is
   already an invite-only, review-free private channel. Building a 400-line orchestrator to duplicate
-  something Apple gives away is over-building. If you want an off-main build, add a
-  `workflow_dispatch` trigger to the beta shell.
+  something Apple gives away is over-building. If you want an off-main build, run the
+  distribute shell by hand on that branch.
 - **`memory-watch.yml` — skipped.** `simctl` RSS sampling measures something different from the macOS
   version (simulator process ≠ device memory, no jetsam), so the thresholds don't transfer and you'd
   tune a new heuristic from scratch. Revisit only if an iOS app actually leaks.
@@ -134,7 +137,7 @@ These are all bugs someone already paid for. Don't "clean them up".
 - **`set +e` around the `altool` capture.** Under errexit a non-zero exit aborts the step before the
   classifier runs. This was a real macOS bug (v0.3.46).
 - **`classify-upload.sh` must stay the single definition** of "did the upload land?", sourced by the
-  beta publish job *and* `tests/run.sh`. `ITMS-90189` → `already-present` (benign); `-19232` →
+  publish job *and* `tests/run.sh`. `ITMS-90189` → `already-present` (benign); `-19232` →
   **`failed`**. Never widen the pattern to "already been used" — that swallowed a failed upload as
   green once already.
 - **`manageAppVersionAndBuildNumber` must be `false`** in ExportOptions. It defaults to `true` for
@@ -147,15 +150,15 @@ These are all bugs someone already paid for. Don't "clean them up".
   `prepare` emits `has-any` and the build job gates on that boolean. `matrix.*` is likewise illegal in
   `uses:`.
 - **`download-artifact` flattens a lone matched artifact** into the base path with no subdir; two or
-  more do get subdirs. The re-nest loop is why a single-product beta doesn't report "No .ipa" — the
+  more do get subdirs. The re-nest loop is why a single-product run doesn't report "No .ipa" — the
   common case, since most repos ship one product.
 - **`.shared-ci` is checked out at `github.job_workflow_sha`**, never `@main`, so the scripts can't
   drift from the workflow YAML calling them mid-run.
 - **`runs-on*` inputs are JSON-encoded** and consumed with `fromJSON()`. A bare `macos-26` is invalid.
-- **Repo-wide `concurrency`, `cancel-in-progress: false`** on beta — racing pushes would otherwise
-  produce duplicate `-beta.N` tags.
-- **An empty `ASSUME_CHANGED` counts as unset** (`if inj:`, never `is not None`). `force-beta` off
-  renders to `""`; read as "nothing changed", it would silently stop every beta on every push.
+- **Repo-wide `concurrency`, `cancel-in-progress: false`** on `distribute.yml` — racing pushes would
+  otherwise both diff against the same last build tag and upload the same change twice.
+- **An empty `ASSUME_CHANGED` counts as unset** (`if inj:`, never `is not None`). `force` off renders
+  to `""`; read as "nothing changed", it would silently stop every build on every push.
 
 ## Editing patterns
 
@@ -165,7 +168,7 @@ These are all bugs someone already paid for. Don't "clean them up".
   / `PRODUCTS_DIR`. Add a case to `tests/run.sh` for any behaviour change — it runs in about a
   second and needs no git repo or network.
 - **When bumping the tag, also bump the `@vX.Y.Z` callouts inside the shared workflows AND in
-  `examples/per-app/`.** Both `distribute-*.yml` (which call `_build-ios.yml` / `_test.yml`) and every
+  `examples/per-app/`.** Both orchestrators (which call `_build-ios.yml` / `_test.yml`) and every
   example shell carry the pin.
 - **Prove changes end-to-end on one app first**, then port. TestFlight is a free smoke test — an
   `altool` upload triggers no App Store review, and internal-tester distribution is unlimited. For an

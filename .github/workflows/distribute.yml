@@ -1,15 +1,15 @@
-# ── Beta Distribution Orchestrator (iOS) ─────────────────────────────────────
-# Fired on every push to main. Discovers Config/products/<id>.json, cuts a beta
-# for each product whose OWN file (or its source-paths) changed since its last
-# beta AND whose version isn't released yet, builds each one, uploads the .ipa
-# to App Store Connect (TestFlight), then pushes each product's own
-# `<id>-v<ver>-beta.N` tag + a notes-only GitHub pre-release, both naming the
-# build number.
+# ── Distribution Orchestrator (iOS) ──────────────────────────────────────────
+# Fired on every push to main. Discovers Config/products/<id>.json and builds
+# each product whose OWN file (or its source-paths) changed since its last
+# build AND whose version isn't released yet, uploads the .ipa to App Store
+# Connect (TestFlight) — Ad Hoc: to S3 — then pushes each product's own
+# `<id>-v<ver>-<build number>` tag + a notes-only GitHub release.
 #
-# There is no release build (#14). The beta IS the build that ships: submit the
-# tested build in App Store Connect and, once it is approved, bump the changelog
-# version — or push a bare `<id>-v<ver>` / `v<ver>` marker tag, which idles that
-# product here. An Ad Hoc beta is live on S3 the moment it is cut.
+# There are no betas and no release build (#14, #15): the build tested in
+# TestFlight is the build you submit in App Store Connect. Once it is approved,
+# bump the changelog version — or push a bare `<id>-v<ver>` / `v<ver>` marker
+# tag, which idles that product here. An Ad Hoc build is live on S3 the moment
+# it is cut.
 #
 # Both iOS channels (App Store Connect, Ad Hoc) build the same way, so unlike
 # the macOS sibling there is no direct/store split: a single `has-any` boolean
@@ -24,15 +24,15 @@
 #   on:
 #     push:
 #       branches: [main]
-#     workflow_dispatch:   # + a force-beta checkbox — see the example shell
+#     workflow_dispatch:   # + a force checkbox — see the example shell
 #   jobs:
-#     beta:
-#       uses: LeanBytes/workflows-ios/.github/workflows/distribute-beta.yml@v0.3.0
-#       secrets: ...   # explicit block — see examples/per-app/distribute-beta.yml
+#     distribute:
+#       uses: LeanBytes/workflows-ios/.github/workflows/distribute.yml@v0.4.0
+#       secrets: ...   # explicit block — see examples/per-app/distribute.yml
 #       with:
-#         force-beta: ${{ inputs.force-beta || false }}
+#         force: ${{ inputs.force || false }}
 # ─────────────────────────────────────────────────────────────────────────────
-name: distribute-beta
+name: distribute
 
 on:
   workflow_call:
@@ -47,8 +47,8 @@ on:
         type: boolean
         default: true
 
-      force-beta:
-        description: "Cut a beta even when nothing changed since the last one — a TestFlight build about to expire (90 days), the yearly Ad Hoc profile renewal, a toolchain or dependency change, a flaky runner. Has NO effect on a product whose version is already released: forcing overrides 'nothing changed', not 'already shipped'. Meant for a workflow_dispatch checkbox in the caller's shell."
+      force:
+        description: "Build even when nothing changed since the last build — a TestFlight build about to expire (90 days), the yearly Ad Hoc profile renewal, a toolchain or dependency change, a flaky runner. Has NO effect on a product whose version is already released: forcing overrides 'nothing changed', not 'already shipped'. Meant for a workflow_dispatch checkbox in the caller's shell."
         type: boolean
         default: false
 
@@ -88,9 +88,9 @@ on:
         type: number
         default: 7
 
-      # ── Tests (opt-in) — gate the beta on the app's Swift tests ────────────
+      # ── Tests (opt-in) — gate the build on the app's Swift tests ───────────
       run-tests:
-        description: "Gate the beta on tests. A failing test skips build + publish and files a Jira ticket."
+        description: "Gate the build on tests. A failing test skips build + publish and files a Jira ticket."
         type: boolean
         default: false
       test-runner:
@@ -143,10 +143,10 @@ on:
 permissions:
   contents: write
 
-# Repo-wide, never cancelled: two pushes racing on a product's beta counter
-# would otherwise produce duplicate -beta.N tags.
+# Repo-wide, never cancelled: two racing pushes would otherwise both diff
+# against the same last build tag and upload the same change twice.
 concurrency:
-  group: distribute-beta-${{ github.repository }}
+  group: distribute-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
@@ -154,7 +154,7 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runs-on-prepare) }}
     timeout-minutes: 5
     outputs:
-      products: ${{ steps.plan.outputs.beta-products }}
+      products: ${{ steps.plan.outputs.products }}
       has-any: ${{ steps.plan.outputs.has-any }}
       build-number: ${{ steps.plan.outputs.build-number }}
       test-scheme: ${{ steps.plan.outputs.test-scheme }}
@@ -174,7 +174,7 @@ jobs:
           path: .shared-ci
           token: ${{ secrets.SHARED_WORKFLOWS_TOKEN || github.token }}
 
-      - name: Plan betas (changelog-driven cutting set)
+      - name: Plan builds (changelog-driven cutting set)
         id: plan
         env:
           PRODUCTS_DIR: ${{ inputs.products-dir }}
@@ -182,9 +182,9 @@ jobs:
           # `*` = every discovered product. Off renders to "", which products.py
           # treats as UNSET — the `if inj:` there is load-bearing: under an
           # `is not None` test an empty value would mean "nothing changed" and
-          # silently stop every beta on every normal push.
-          ASSUME_CHANGED: ${{ inputs.force-beta && '*' || '' }}
-        run: python3 .shared-ci/.github/scripts/products.py plan-beta >> "$GITHUB_OUTPUT"
+          # silently stop every build on every normal push.
+          ASSUME_CHANGED: ${{ inputs.force && '*' || '' }}
+        run: python3 .shared-ci/.github/scripts/products.py plan >> "$GITHUB_OUTPUT"
 
       - name: Show cutting set
         run: |
@@ -195,7 +195,7 @@ jobs:
   test:
     if: inputs.run-tests
     needs: prepare
-    uses: LeanBytes/workflows-ios/.github/workflows/_test.yml@v0.3.0
+    uses: LeanBytes/workflows-ios/.github/workflows/_test.yml@v0.4.0
     with:
       test-runner: ${{ inputs.test-runner }}
       runs-on: ${{ inputs.runs-on-build }}
@@ -226,11 +226,10 @@ jobs:
       fail-fast: false
       matrix:
         product: ${{ fromJSON(needs.prepare.outputs.products) }}
-    uses: LeanBytes/workflows-ios/.github/workflows/_build-ios.yml@v0.3.0
+    uses: LeanBytes/workflows-ios/.github/workflows/_build-ios.yml@v0.4.0
     with:
       version: ${{ matrix.product.marketing }}        # bare X.Y.Z — ASC rejects suffixes
       build-number: ${{ needs.prepare.outputs.build-number }}
-      artifact-label: ${{ matrix.product.artifact-label }}
       artifact-name: ios-build-${{ matrix.product.id }}
       scheme: ${{ matrix.product.scheme }}
       bundle-id: ${{ matrix.product.bundle-id }}
@@ -247,7 +246,7 @@ jobs:
       KEYCHAIN_PASSWORD:      ${{ secrets.KEYCHAIN_PASSWORD }}
       PROV_PROF_STORE_BASE64: ${{ matrix.product.profile-secret != '' && secrets[matrix.product.profile-secret] || secrets.PROV_PROF_STORE_BASE64 }}
 
-  publish-beta:
+  publish:
     needs: [prepare, test, build]
     if: ${{ always() && needs.test.result != 'failure' && needs.build.result == 'success' }}
     runs-on: ${{ fromJSON(inputs.runs-on-publish) }}
@@ -281,14 +280,14 @@ jobs:
 
       # Expand the cutting set into a \x1f-delimited table (NOT tab — tab is
       # IFS-whitespace and `read` would collapse an empty column, shifting every
-      # later field). Read: id pname dist ver label rtag chan bid
+      # later field). Read: id pname dist ver rtag chan bid
       - name: Expand products
         shell: bash
         run: |
           set -euo pipefail
           python3 - "$PRODUCTS_JSON" > /tmp/products.tsv <<'PY'
           import json, sys
-          fields = ["id","product-name","distribute","version","artifact-label","release-tag","channel","bundle-id"]
+          fields = ["id","product-name","distribute","version","release-tag","channel","bundle-id"]
           for p in json.loads(sys.argv[1]):
               print("\x1f".join(str(p.get(k, "")) for k in fields))
           PY
@@ -302,7 +301,7 @@ jobs:
           # the base path (no per-artifact subdir); multiple matches DO get subdirs
           # (merge-multiple defaults false). Re-nest a flattened artifact so the
           # per-product globs below can always assume artifacts/ios/<name>/ —
-          # otherwise a single-product beta finds "No .ipa".
+          # otherwise a single-product run finds "No .ipa".
           while IFS=$'\x1f' read -r id _; do
             base="./artifacts/ios"; want="$base/ios-build-$id"
             if [ -d "$base" ] && [ ! -d "$want" ] && [ -n "$(find "$base" -maxdepth 1 -type f 2>/dev/null)" ]; then
@@ -317,7 +316,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          while IFS=$'\x1f' read -r id pname dist ver label rtag chan bid; do
+          while IFS=$'\x1f' read -r id pname dist ver rtag chan bid; do
             CHANGELOG_PATH="${PRODUCTS_DIR}/$id.json" VERSION="NEXT" \
               .shared-ci/.github/scripts/changelog-from-json.sh > "/tmp/notes-$id.md" || true
           done < /tmp/products.tsv
@@ -348,7 +347,7 @@ jobs:
         run: |
           set -uo pipefail
           source .shared-ci/.github/scripts/classify-upload.sh
-          while IFS=$'\x1f' read -r id pname dist ver label rtag chan bid; do
+          while IFS=$'\x1f' read -r id pname dist ver rtag chan bid; do
             [ "$dist" = "True" ] || { echo "product $id: distribute=false — skipping upload"; continue; }
             [ "$chan" = "app-store" ] || { echo "product $id: channel=$chan — kein TestFlight-Upload"; continue; }
             echo "::group::TestFlight upload — product=$id"
@@ -404,7 +403,7 @@ jobs:
             echo "::error::Der ad-hoc-Kanal braucht die Variablen S3_DISTRIBUTION_PATH und S3_DOWNLOAD_URL."
             exit 1
           fi
-          while IFS=$'\x1f' read -r id pname dist ver label rtag chan bid; do
+          while IFS=$'\x1f' read -r id pname dist ver rtag chan bid; do
             [ "$chan" = "ad-hoc" ] || continue
             [ "$dist" = "True" ] || { echo "product $id: distribute=false — kein S3-Upload"; continue; }
             echo "::group::S3 upload (ad-hoc) — product=$id"
@@ -434,46 +433,47 @@ jobs:
             echo "::endgroup::"
           done < /tmp/products.tsv
 
-      # ── Per product: push its own beta tag + pre-release (notes only) ─────
-      # LAST, so a failed upload never leaves a tag claiming the beta shipped.
-      - name: Push beta tag + create pre-release (per product)
+      # ── Per product: push its own tag + GitHub release (notes only) ───────
+      # LAST, so a failed upload never leaves a tag claiming the build shipped.
+      - name: Push tag + create GitHub release (per product)
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          while IFS=$'\x1f' read -r id pname dist ver label rtag chan bid; do
+          while IFS=$'\x1f' read -r id pname dist ver rtag chan bid; do
             echo "::group::publish $id → $rtag"
             if git rev-parse "refs/tags/$rtag" >/dev/null 2>&1 || git ls-remote --exit-code --tags origin "$rtag" >/dev/null 2>&1; then
               echo "tag $rtag already exists — skipping (idempotent re-run)"; echo "::endgroup::"; continue
             fi
-            # The build number goes on both: App Store Connect lists a build as
-            # "X.Y.Z (build)", and since this beta is what gets submitted (#14),
-            # that is the only way back from ASC to the tag and the commit.
-            git tag -a "$rtag" -m "Beta $rtag (build $BUILD_NUMBER)"
+            # The tag ends in the build number and the title reads the way App
+            # Store Connect lists the build, "X.Y.Z (build)" — the way back from
+            # the build you submit to its commit. Not a pre-release: there are
+            # no betas, this build may be the one that ships (#15).
+            git tag -a "$rtag" -m "$pname $ver ($BUILD_NUMBER)"
             git push origin "$rtag"
-            NOTES_ARG=(--notes "Beta $rtag ($pname $ver, build $BUILD_NUMBER)")
+            NOTES_ARG=(--notes "$pname $ver ($BUILD_NUMBER)")
             if [ -f "/tmp/notes-$id.md" ] && [ -s "/tmp/notes-$id.md" ]; then
               NOTES_ARG=(--notes-file "/tmp/notes-$id.md")
             fi
             # No `gh release upload` — an App-Store-only product has no
             # downloadable asset; the build lives in TestFlight.
-            gh release create "$rtag" --repo "$REPO" --title "$rtag (build $BUILD_NUMBER)" --prerelease "${NOTES_ARG[@]}"
-            echo "pushed $rtag + pre-release ✅"; echo "::endgroup::"
+            gh release create "$rtag" --repo "$REPO" --title "$pname $ver ($BUILD_NUMBER)" "${NOTES_ARG[@]}"
+            echo "pushed $rtag + release ✅"; echo "::endgroup::"
           done < /tmp/products.tsv
 
       # ── Run summary ────────────────────────────────────────────────────────
-      - name: Write beta summary
+      - name: Write summary
         shell: bash
         run: |
           set -euo pipefail
           {
-            echo "## Betas cut ✅  (build \`${BUILD_NUMBER}\`)"
+            echo "## Built ✅  (build \`${BUILD_NUMBER}\`)"
             echo
             echo "| Product | Version | Tag | Where |"
             echo "|---|---|---|---|"
             testflight=
-            while IFS=$'\x1f' read -r id pname dist ver label rtag chan bid; do
+            while IFS=$'\x1f' read -r id pname dist ver rtag chan bid; do
               if [ "$dist" != "True" ]; then
                 echo "| ${pname} | ${ver} | \`${rtag}\` | (not distributed) |"
               elif [ "$chan" = "ad-hoc" ]; then

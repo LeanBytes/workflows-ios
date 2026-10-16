@@ -1,19 +1,19 @@
-# ── Per-app beta shell (iOS) ─────────────────────────────────────────────────
-# Copy to .github/workflows/distribute-beta.yml. Fires on every push to main,
+# ── Per-app distribute shell (iOS) ───────────────────────────────────────────
+# Copy to .github/workflows/distribute.yml. Fires on every push to main,
 # and on a manual run (workflow_dispatch, below).
-# The orchestrator discovers Config/products/<id>.json and cuts a beta for each
-# product whose OWN file (or its source-paths) changed since its last beta.
-# Each product uploads to TestFlight, then pushes its own
-# <id>-v<ver>-beta.N tag + a notes-only pre-release.
+# The orchestrator discovers Config/products/<id>.json and builds each product
+# whose OWN file (or its source-paths) changed since its last build. Each
+# product uploads to TestFlight (Ad Hoc: S3), then pushes its own
+# <id>-v<ver>-<build number> tag + a notes-only GitHub release.
 # ─────────────────────────────────────────────────────────────────────────────
-name: Distribute Beta
+name: Distribute
 
 on:
   push:
     branches: [main]
 
-  # Manual re-cut. Normally a beta only happens when a product's file (or its
-  # source-paths) changed since its last beta; tick the box to ship one anyway —
+  # Manual build. Normally a product builds only when its file (or its
+  # source-paths) changed since its last build; tick the box to build anyway —
   # a TestFlight build about to expire (90 days), the yearly Ad Hoc profile
   # renewal (update the profile secret first), a toolchain or dependency bump,
   # a flaky runner. It does NOT override "already released": bump the changelog
@@ -21,8 +21,8 @@ on:
   # tags that branch's commit instead.
   workflow_dispatch:
     inputs:
-      force-beta:
-        description: "Cut a beta even if nothing changed"
+      force:
+        description: "Build even if nothing changed"
         type: boolean
         default: false
 
@@ -30,8 +30,8 @@ permissions:
   contents: write
 
 jobs:
-  beta:
-    uses: LeanBytes/workflows-ios/.github/workflows/distribute-beta.yml@v0.3.0
+  distribute:
+    uses: LeanBytes/workflows-ios/.github/workflows/distribute.yml@v0.4.0
     # The explicit list works in every configuration. `secrets: inherit` is a
     # same-org shortcut only — it silently passes NOTHING once the call chain
     # crosses an account boundary, and every signing step then fails with a
@@ -53,7 +53,7 @@ jobs:
     with:
       # false on a push (the input does not exist there), true only when the box
       # is ticked on a manual run. Keep this line even if you add nothing else.
-      force-beta: ${{ inputs.force-beta || false }}
+      force: ${{ inputs.force || false }}
     # ── Defaults a product file inherits when it omits them ─────────────────
     # Uncomment what you need — they belong under the `with:` above.
     #   distribute: false                # build + sign only, never touch ASC (dry run)
@@ -62,6 +62,6 @@ jobs:
     #   # runners default to self-hosted macOS ([self-hosted, macOS]); override here, e.g.:
     #   runs-on-build: '["self-hosted","agent-alex"]'   # pin to a specific runner
     #   runs-on-publish: '"macos-26"'                    # or send a job back to a hosted runner
-    #   run-tests: true                  # gate the beta on tests (files a Jira ticket on failure)
+    #   run-tests: true                  # gate the build on tests (files a Jira ticket on failure)
     #   test-destination: 'platform=iOS Simulator,name=iPhone 17'
     #   artifact-retention-days: 30      # keep uploaded build/test artifacts longer than the 7-day default

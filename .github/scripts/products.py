@@ -9,13 +9,16 @@ emitting `key=value` lines meant to be appended to `$GITHUB_OUTPUT`.
 
 Subcommands:
   discover       Identity of every product (for the PR compile fan-out).
-  plan-beta      The beta cutting set on a push to main — a product is cut ONLY
-                 when its version is unreleased AND its own product file (or one
-                 of its `source-paths`) changed since its last beta. Each product
-                 is fully independent: own version line, own `-beta.N` counter.
+  plan           What builds on a push to main — a product builds ONLY when its
+                 version is unreleased AND its own product file (or one of its
+                 `source-paths`) changed since its last build. Each product is
+                 fully independent: own version line, own tags. Every build is
+                 tagged `<id>-v<version>-<build number>`, the pair App Store
+                 Connect shows as "<version> (<build number>)". There are no
+                 betas: the build tested in TestFlight is the build that ships.
                  "Released" = a bare `<id>-v<version>` / `v<version>` tag exists:
                  a marker pushed by hand once the version shipped. Nothing builds
-                 on it — the TestFlight beta IS the build that ships.
+                 on it.
 
 Both iOS channels (App Store Connect, Ad Hoc) build the same way — only the
 export method and publish leg differ — so unlike the macOS sibling there are no
@@ -24,7 +27,7 @@ matrix throws rather than skipping).
 
 Everything is pure stdlib. Git access is isolated so the logic unit-tests
 offline: set `GIT_TAGS` (space-separated) and `ASSUME_CHANGED` (space-separated
-ids treated as "changed since last beta", or `*` for every product) to stub git,
+ids treated as "changed since last build", or `*` for every product) to stub git,
 and `BUILD_NUMBER` to pin the timestamp.
 
 Env inputs:
@@ -32,9 +35,9 @@ Env inputs:
   DEF_DISTRIBUTE               default a product inherits when it omits
                                "distribute" (mirrors the orchestrator input)
   GIT_TAGS / BUILD_NUMBER      test-injection overrides
-  ASSUME_CHANGED               ids to treat as changed since their last beta,
+  ASSUME_CHANGED               ids to treat as changed since their last build,
                                or `*` for all. Stubs git for tests AND backs the
-                               orchestrator's force-beta input. Empty == unset.
+                               orchestrator's force input. Empty == unset.
 """
 import glob
 import json
@@ -96,13 +99,13 @@ def product_changed_since(key, filename, last_tag, products_dir, source_paths=()
     between last_tag and HEAD, OR if ASSUME_CHANGED stipulates it.
 
     Without `source-paths`, only the product file counts, so a commit that changes
-    nothing but Swift still cuts no beta and the run goes green with the fix
+    nothing but Swift still builds nothing and the run goes green with the fix
     sitting unshipped on main. Declaring the paths a product actually builds from
-    makes a code-only change cut a beta on its own.
+    makes a code-only change build on its own.
     """
     # Empty counts as UNSET, deliberately. The obvious workflow wiring for an
     # off switch renders to "", and under an `is not None` test that would mean
-    # "nothing changed" — silently stopping every beta on every normal push.
+    # "nothing changed" — silently stopping every build on every normal push.
     inj = os.environ.get("ASSUME_CHANGED", "").strip()
     if inj:
         return inj == "*" or key in inj.split()
@@ -199,9 +202,9 @@ def resolve(products_dir, defaults):
             "_bare": bare,
             "_file": os.path.basename(f),
             # Git pathspecs this product builds from, e.g. ["Sources/**",
-            # "Project.swift"]. Optional; when set, a change to any of them cuts a
-            # beta on its own, so a code-only fix ships without needing a
-            # cosmetic edit to the product file. Internal: plan-beta only.
+            # "Project.swift"]. Optional; when set, a change to any of them
+            # builds on its own, so a code-only fix ships without needing a
+            # cosmetic edit to the product file. Internal: plan only.
             "_source_paths": [str(x) for x in (p.get("source-paths") or []) if str(x).strip()],
         })
 
@@ -223,31 +226,36 @@ def cmd_discover(products_dir, defaults):
     emit("ids", " ".join(r["id"] for r in records))
 
 
-def cmd_plan_beta(products_dir, defaults):
+def cmd_plan(products_dir, defaults):
     records = resolve(products_dir, defaults)
     tags = set(git_tags())
     forced = bool(os.environ.get("ASSUME_CHANGED", "").strip())
+    build = build_number()
     cutting = []
     for r in records:
         pid, v = r["id"], r["_version"]
         pfx = tag_prefix(r)                             # 'v' (primary) or '<id>-v'
         if f"{pfx}{v}" in tags:                          # released → idle → skip
-            # Forcing overrides "nothing changed", never "already released" — a
-            # beta of a shipped version is nonsense. But a run that was asked to
-            # force and then quietly does nothing looks broken exactly when it is
-            # behaving correctly, so say so loudly and name the way out.
+            # Forcing overrides "nothing changed", never "already released" — App
+            # Store Connect rejects any further build of an approved version. But
+            # a run that was asked to force and then quietly does nothing looks
+            # broken exactly when it is behaving correctly, so say so loudly and
+            # name the way out.
             if forced:
-                warn(f"{pid}: force-beta was set, but {pfx}{v} is already released — no beta "
+                warn(f"{pid}: force was set, but {pfx}{v} is already released — no build "
                      f"cut. Forcing overrides 'nothing changed', not 'already shipped'. Bump "
-                     f"changelog.versions[0].version to start the next cycle.")
+                     f"changelog.versions[0].version to start the next version.")
             else:
-                note(f"{pid}: {pfx}{v} already released — idle (bump its changelog to cut betas)")
+                note(f"{pid}: {pfx}{v} already released — idle (bump its changelog to build again)")
             continue
-        betas = [t for t in tags if t.startswith(f"{pfx}{v}-beta.")]
-        if betas:                                       # re-beta ONLY if this product changed
-            nums = [int(t.rsplit(".", 1)[1]) for t in betas if t.rsplit(".", 1)[1].isdigit()]
-            last_n = max(nums) if nums else 0
-            last_tag = f"{pfx}{v}-beta.{last_n}"
+        # A build tag is <pfx><v>-<build number>. The build number is a fixed-width
+        # timestamp, so the newest build is the largest. Anything else after the
+        # prefix — a pre-v0.4.0 `-beta.N` tag — is not a build: the first push
+        # after an app upgrades builds once, deliberately (#15).
+        builds = [t[len(f"{pfx}{v}-"):] for t in tags if t.startswith(f"{pfx}{v}-")]
+        builds = [b for b in builds if b.isdecimal()]
+        if builds:                                      # rebuild ONLY if this product changed
+            last_tag = f"{pfx}{v}-{max(builds, key=int)}"
             if not product_changed_since(pid, r["_file"], last_tag, products_dir, r["_source_paths"]):
                 # A warning, not a notice: this is the case where a push that DID
                 # change code still ships nothing, and the run is otherwise green.
@@ -255,29 +263,26 @@ def cmd_plan_beta(products_dir, defaults):
                 # what to do about it rather than letting the silence pass.
                 if r["_source_paths"]:
                     warn(f"{pid}: neither {products_dir}/{r['_file']} nor its source-paths "
-                         f"changed since {last_tag} — no beta cut")
+                         f"changed since {last_tag} — no build cut")
                 else:
-                    warn(f"{pid}: {products_dir}/{r['_file']} unchanged since {last_tag} — no beta "
-                         f"cut. Code-only changes do NOT trigger a beta; add \"source-paths\" to "
+                    warn(f"{pid}: {products_dir}/{r['_file']} unchanged since {last_tag} — no build "
+                         f"cut. Code-only changes do NOT trigger a build; add \"source-paths\" to "
                          f"the product file (e.g. [\"Sources/**\", \"Project.swift\"]) so they do.")
                 continue
-            n = last_n + 1
-        else:
-            n = 1                                       # first beta of v — the bump IS the change
+        # else: first build of v — the bump IS the change
         rec = strip_internal(r)
         # TestFlight takes the bare marketing version always — Apple's iTMS rejects
         # a non-N.N.N CFBundleShortVersionString. The build number disambiguates.
         rec.update({
             "version": v,
             "marketing": v,
-            "artifact-label": f"v{v}-beta.{n}",
-            "release-tag": f"{pfx}{v}-beta.{n}",
+            "release-tag": f"{pfx}{v}-{build}",
         })
         cutting.append(rec)
 
-    emit("beta-products", compact(cutting))
+    emit("products", compact(cutting))
     emit("has-any", "true" if cutting else "false")
-    emit("build-number", build_number())
+    emit("build-number", build)
     # Test scheme/app-name default to the FIRST discovered product (always
     # present, even when the cutting set is empty) so the opt-in test gate has a
     # scheme regardless of what changed this push.
@@ -291,10 +296,10 @@ def main():
     defaults = read_defaults()
     if cmd == "discover":
         cmd_discover(products_dir, defaults)
-    elif cmd == "plan-beta":
-        cmd_plan_beta(products_dir, defaults)
+    elif cmd == "plan":
+        cmd_plan(products_dir, defaults)
     else:
-        die(f"unknown subcommand '{cmd}' (expected discover | plan-beta)")
+        die(f"unknown subcommand '{cmd}' (expected discover | plan)")
 
 
 if __name__ == "__main__":

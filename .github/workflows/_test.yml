@@ -1,7 +1,7 @@
 # ── Test runner (reusable) ───────────────────────────────────────────────────
 # Runs an app's Swift tests UNSIGNED and reports pass/fail + coverage. Called by
-# distribute-pr.yml (red check on PRs), distribute-beta.yml (a gate before the
-# beta is published), and a per-app nightly shell. The test logic lives in the
+# distribute-pr.yml (red check on PRs), distribute.yml (a gate before anything
+# is uploaded), and a per-app nightly shell. The test logic lives in the
 # shared `.github/scripts/run-tests.sh`; this workflow checks workflows-ios out
 # into `.shared-ci/` (same commit, via github.job_workflow_sha) and runs it.
 #

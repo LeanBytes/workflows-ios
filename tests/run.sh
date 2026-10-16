@@ -53,59 +53,59 @@ CAP PRODUCTS_DIR="$MULTI" DEF_DISTRIBUTE=false python3 "$PY" discover
 jok "main inherits false; companion stays false" \
   'p={x["id"]:x for x in json.loads(o["products"])}; assert p["main"]["distribute"] is False; assert p["companion"]["distribute"] is False'
 
-echo "== plan-beta: companion released (idle), main mid-dev, no betas yet =="
-CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="companion-v1.3.0" BUILD_NUMBER="260704000000" python3 "$PY" plan-beta
-[ $RC -eq 0 ] && pass "exit 0" || bad "plan-beta exit"
-jok "only main → beta.1 (idle companion skipped)" \
-  'b=json.loads(o["beta-products"]); assert [x["id"] for x in b]==["main"], b; assert b[0]["release-tag"]=="main-v2.14.0-beta.1"; assert o["build-number"]=="260704000000"'
+echo "== plan: companion released (idle), main mid-dev, no builds yet =="
+CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="companion-v1.3.0" BUILD_NUMBER="260704000000" python3 "$PY" plan
+[ $RC -eq 0 ] && pass "exit 0" || bad "plan exit"
+jok "only main builds (idle companion skipped); its tag ends in the build number" \
+  'b=json.loads(o["products"]); assert [x["id"] for x in b]==["main"], b; assert b[0]["release-tag"]=="main-v2.14.0-260704000000", b[0]["release-tag"]; assert o["build-number"]=="260704000000"'
 jok "TestFlight marketing version stays bare N.N.N (ASC rejects suffixes)" \
-  'b=json.loads(o["beta-products"]); assert b[0]["marketing"]=="2.14.0", b[0]["marketing"]; assert b[0]["artifact-label"]=="v2.14.0-beta.1"'
+  'b=json.loads(o["products"]); assert b[0]["marketing"]=="2.14.0", b[0]["marketing"]'
 line "test scheme falls back to the first product" "test-scheme=Companion"
 line "test app-name falls back to the first product" "test-app-name=Companion"
 
-echo "== plan-beta: both mid-dev, nothing released → both first beta =="
-CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="" BUILD_NUMBER="x" python3 "$PY" plan-beta
-jok "both → beta.1" \
-  'b=json.loads(o["beta-products"]); assert sorted(x["id"] for x in b)==["companion","main"]; assert o["has-any"]=="true"'
+echo "== plan: both mid-dev, nothing released → both build =="
+CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="" BUILD_NUMBER="x" python3 "$PY" plan
+jok "both build" \
+  'b=json.loads(o["products"]); assert sorted(x["id"] for x in b)==["companion","main"]; assert o["has-any"]=="true"'
 
-echo "== plan-beta: push 2 — only main changed =="
-CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0-beta.1 companion-v1.3.0-beta.1" ASSUME_CHANGED="main" BUILD_NUMBER="x" python3 "$PY" plan-beta
-jok "only main → beta.2; companion unchanged → skipped" \
-  'b=json.loads(o["beta-products"]); assert [x["id"] for x in b]==["main"], b; assert b[0]["release-tag"]=="main-v2.14.0-beta.2"'
+echo "== plan: push 2 — only main changed =="
+CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0-260704000000 companion-v1.3.0-260704000000" ASSUME_CHANGED="main" BUILD_NUMBER="260705000000" python3 "$PY" plan
+jok "only main builds again; companion unchanged → skipped" \
+  'b=json.loads(o["products"]); assert [x["id"] for x in b]==["main"], b; assert b[0]["release-tag"]=="main-v2.14.0-260705000000"'
 
-echo "== plan-beta: everything released → empty cutting set =="
-CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0 companion-v1.3.0" BUILD_NUMBER="x" python3 "$PY" plan-beta
-line "nothing cuts → has-any=false gates the build job" "has-any=false"
-jok "beta-products is an empty array, not absent" 'assert json.loads(o["beta-products"])==[]'
+echo "== plan: everything released → empty cutting set =="
+CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0 companion-v1.3.0" BUILD_NUMBER="x" python3 "$PY" plan
+line "nothing builds → has-any=false gates the build job" "has-any=false"
+jok "products is an empty array, not absent" 'assert json.loads(o["products"])==[]'
 
-echo "== force-beta: ASSUME_CHANGED overrides \"nothing changed\", not \"already shipped\" =="
-# Backs the orchestrator's force-beta checkbox. `*` = every product; a list
+echo "== force: ASSUME_CHANGED overrides \"nothing changed\", not \"already shipped\" =="
+# Backs the orchestrator's force checkbox. `*` = every product; a list
 # names them. Empty MUST count as unset, or the off position of the switch
-# would silently stop every beta on every normal push (#13). `*` itself is
+# would silently stop every build on every normal push (#13). `*` itself is
 # asserted in the real-git source-paths section below: with stub tags, a
 # failing `git diff` reads as "changed" too, so no stubbed case can show it.
 
 # Empty must behave EXACTLY like unset, whatever git then says — that is the
 # invariant, and it holds without depending on this repo's tag state.
-E=$(PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0-beta.1" ASSUME_CHANGED="" BUILD_NUMBER="x" python3 "$PY" plan-beta 2>/dev/null)
-U=$(PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0-beta.1"                     BUILD_NUMBER="x" python3 "$PY" plan-beta 2>/dev/null)
+E=$(PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0-260704000000" ASSUME_CHANGED="" BUILD_NUMBER="x" python3 "$PY" plan 2>/dev/null)
+U=$(PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0-260704000000"                     BUILD_NUMBER="x" python3 "$PY" plan 2>/dev/null)
 [ "$E" = "$U" ] && pass "empty ASSUME_CHANGED behaves exactly like unset" \
-  || { echo "  FAIL: ASSUME_CHANGED='' differs from unset — the off position of force-beta"; FAIL=1; }
+  || { echo "  FAIL: ASSUME_CHANGED='' differs from unset — the off position of force"; FAIL=1; }
 
-CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0 companion-v1.3.0" ASSUME_CHANGED="*" BUILD_NUMBER="x" python3 "$PY" plan-beta
+CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0 companion-v1.3.0" ASSUME_CHANGED="*" BUILD_NUMBER="x" python3 "$PY" plan
 line "a released version is NOT forced — it stays idle" "has-any=false"
-grep -q "::warning::.*force-beta was set, but" /tmp/pd.err \
+grep -q "::warning::.*force was set, but" /tmp/pd.err \
   && pass "forcing a released version warns loudly instead of going quietly green" \
   || { echo "  FAIL: forcing an already-released version must ::warning::, not ::notice::"; FAIL=1; }
 
 # The wiring: `*` when the box is ticked, "" when it is not — never a value that
 # products.py would read as "nothing changed".
-BWF="$ROOT/.github/workflows/distribute-beta.yml"
-grep -q "^      force-beta:" "$BWF" && pass "distribute-beta.yml declares force-beta" \
-  || { echo "  FAIL: distribute-beta.yml has no force-beta input"; FAIL=1; }
-grep -qF "ASSUME_CHANGED: \${{ inputs.force-beta && '*' || '' }}" "$BWF" \
-  && pass "force-beta wires to ASSUME_CHANGED ('*' on, '' off)" \
-  || { echo "  FAIL: distribute-beta.yml must set ASSUME_CHANGED from force-beta"; FAIL=1; }
+BWF="$ROOT/.github/workflows/distribute.yml"
+grep -q "^      force:" "$BWF" && pass "distribute.yml declares force" \
+  || { echo "  FAIL: distribute.yml has no force input"; FAIL=1; }
+grep -qF "ASSUME_CHANGED: \${{ inputs.force && '*' || '' }}" "$BWF" \
+  && pass "force wires to ASSUME_CHANGED ('*' on, '' off)" \
+  || { echo "  FAIL: distribute.yml must set ASSUME_CHANGED from force"; FAIL=1; }
 grep -rq "CHANGED_PRODUCTS" "$ROOT/.github" "$ROOT/CLAUDE.md" "$ROOT/README.md" \
   && { echo "  FAIL: CHANGED_PRODUCTS still referenced — it was renamed to ASSUME_CHANGED"; FAIL=1; } \
   || pass "no stale CHANGED_PRODUCTS references"
@@ -113,25 +113,25 @@ grep -rq "CHANGED_PRODUCTS" "$ROOT/.github" "$ROOT/CLAUDE.md" "$ROOT/README.md" 
 echo "== single-product fixture =="
 CAP PRODUCTS_DIR="$SINGLE" python3 "$PY" discover
 line "single ids" "ids=app"
-CAP PRODUCTS_DIR="$SINGLE" GIT_TAGS="" BUILD_NUMBER="x" python3 "$PY" plan-beta
-jok "app → beta.1" 'b=json.loads(o["beta-products"]); assert b[0]["release-tag"]=="app-v1.0.0-beta.1"'
+CAP PRODUCTS_DIR="$SINGLE" GIT_TAGS="" BUILD_NUMBER="260704000000" python3 "$PY" plan
+jok "app → app-v1.0.0-<build>" 'b=json.loads(o["products"]); assert b[0]["release-tag"]=="app-v1.0.0-260704000000"'
 
 echo "== mixed: primary (empty id → bare v*) + prefixed pro =="
 CAP PRODUCTS_DIR="$MIXED" python3 "$PY" discover
 line "mixed ids (keys from filenames)" "ids=base pro"
-CAP PRODUCTS_DIR="$MIXED" GIT_TAGS="" BUILD_NUMBER="x" python3 "$PY" plan-beta
-jok "base → bare v1.0.0-beta.1; pro → pro-v2.0.0-beta.1" \
-  'b={x["id"]:x for x in json.loads(o["beta-products"])}; assert b["base"]["release-tag"]=="v1.0.0-beta.1", b["base"]["release-tag"]; assert b["pro"]["release-tag"]=="pro-v2.0.0-beta.1", b["pro"]["release-tag"]'
+CAP PRODUCTS_DIR="$MIXED" GIT_TAGS="" BUILD_NUMBER="260704000000" python3 "$PY" plan
+jok "base → bare v1.0.0-<build>; pro → pro-v2.0.0-<build>" \
+  'b={x["id"]:x for x in json.loads(o["products"])}; assert b["base"]["release-tag"]=="v1.0.0-260704000000", b["base"]["release-tag"]; assert b["pro"]["release-tag"]=="pro-v2.0.0-260704000000", b["pro"]["release-tag"]'
 jok "per-product cert secret carried (base overrides, pro defaults)" \
-  'b={x["id"]:x for x in json.loads(o["beta-products"])}; assert b["base"]["cert-secret"]=="APPLE_DISTR_P12_ALT_BASE64"; assert b["base"]["cert-password-secret"]=="APPLE_DISTR_PASSWORD_ALT"; assert b["pro"]["cert-secret"]==""'
+  'b={x["id"]:x for x in json.loads(o["products"])}; assert b["base"]["cert-secret"]=="APPLE_DISTR_P12_ALT_BASE64"; assert b["base"]["cert-password-secret"]=="APPLE_DISTR_PASSWORD_ALT"; assert b["pro"]["cert-secret"]==""'
 # A shipped version's marker tag (pushed by hand — nothing builds on it, #14)
 # idles exactly that product, never its sibling.
-CAP PRODUCTS_DIR="$MIXED" GIT_TAGS="v1.0.0" BUILD_NUMBER="x" python3 "$PY" plan-beta
-jok "base released (bare v1.0.0) → idle; only pro cuts" \
-  'b=[x["id"] for x in json.loads(o["beta-products"])]; assert b==["pro"], b'
-CAP PRODUCTS_DIR="$MIXED" GIT_TAGS="pro-v2.0.0" BUILD_NUMBER="x" python3 "$PY" plan-beta
-jok "pro released (pro-v2.0.0) → idle; only base cuts" \
-  'b=[x["id"] for x in json.loads(o["beta-products"])]; assert b==["base"], b'
+CAP PRODUCTS_DIR="$MIXED" GIT_TAGS="v1.0.0" BUILD_NUMBER="x" python3 "$PY" plan
+jok "base released (bare v1.0.0) → idle; only pro builds" \
+  'b=[x["id"] for x in json.loads(o["products"])]; assert b==["pro"], b'
+CAP PRODUCTS_DIR="$MIXED" GIT_TAGS="pro-v2.0.0" BUILD_NUMBER="x" python3 "$PY" plan
+jok "pro released (pro-v2.0.0) → idle; only base builds" \
+  'b=[x["id"] for x in json.loads(o["products"])]; assert b==["base"], b'
 
 echo "== validation: two empty-id products → hard error =="
 CAP PRODUCTS_DIR="$DUAL" python3 "$PY" discover
@@ -160,10 +160,11 @@ CAP PRODUCTS_DIR="$BADDIR/Config/products" python3 "$PY" discover
   && pass "id/filename mismatch rejected" || bad "expected the filename-mismatch error (rc=$RC)"
 rm -rf "$BADDIR"
 
-echo "== source-paths: a code-only change cuts a beta =="
-# Real git repos, real `git diff` — ASSUME_CHANGED is deliberately NOT set, so
-# these exercise the actual diff path rather than the test stub.
-# $1 = dir, $2 = the "source-paths" JSON line (empty to omit it).
+echo "== source-paths: a code-only change builds =="
+# Real git repos, real tags, real `git diff` — GIT_TAGS and ASSUME_CHANGED are
+# deliberately NOT set, so these exercise the actual git path, not the stubs.
+# $1 = dir, $2 = the "source-paths" JSON line (empty to omit it),
+# $3 = the tag on the first commit (default: a build tag).
 mkrepo() {
   mkdir -p "$1/Config/products" "$1/Sources"
   cat > "$1/Config/products/app.json" <<JSON
@@ -176,33 +177,48 @@ JSON
     set -e; cd "$1"
     git init -q . && git config user.email t@t && git config user.name t
     echo 'let a = 1' > Sources/App.swift
-    git add -A && git commit -qm init && git tag app-v1.0.0-beta.1
+    git add -A && git commit -qm init && git tag "${3:-app-v1.0.0-260101000000}"
     echo 'let a = 2' > Sources/App.swift   # code-only: product file untouched
     git add -A && git commit -qm "code only"
   ) >/dev/null 2>&1
 }
-planbeta() { CAP bash -c "cd '$1' && PRODUCTS_DIR='$1/Config/products' GIT_TAGS='app-v1.0.0-beta.1' BUILD_NUMBER=x python3 '$PY' plan-beta"; }
+plan_in() { CAP bash -c "cd '$1' && PRODUCTS_DIR='$1/Config/products' BUILD_NUMBER=260102000000 python3 '$PY' plan"; }
 
 WITH=$(mktemp -d); mkrepo "$WITH" '"source-paths": ["Sources/**"],'
-planbeta "$WITH"
-jok "code-only change WITH source-paths → cuts beta.2" \
-  'b=json.loads(o["beta-products"]); assert [x["id"] for x in b]==["app"], b; assert b[0]["release-tag"]=="app-v1.0.0-beta.2", b[0]["release-tag"]'
+plan_in "$WITH"
+jok "code-only change WITH source-paths → builds" \
+  'b=json.loads(o["products"]); assert [x["release-tag"] for x in b]==["app-v1.0.0-260102000000"], b'
 jok "source-paths stays internal — not emitted to the workflow matrix" \
-  'assert all("source-paths" not in x and "_source_paths" not in x for x in json.loads(o["beta-products"]))'
+  'assert all("source-paths" not in x and "_source_paths" not in x for x in json.loads(o["products"]))'
 
 WITHOUT=$(mktemp -d); mkrepo "$WITHOUT" ''
-planbeta "$WITHOUT"
-line "code-only change WITHOUT source-paths → nothing cuts" "has-any=false"
+plan_in "$WITHOUT"
+line "code-only change WITHOUT source-paths → nothing builds" "has-any=false"
 { grep -q '::warning::' /tmp/pd.err && grep -q 'source-paths' /tmp/pd.err; } \
-  && pass "the silent skip is now a warning naming the fix" \
+  && pass "the silent skip is a warning naming the fix" \
   || bad "expected a ::warning:: mentioning source-paths; got: $(cat /tmp/pd.err)"
-# The same repo, forced: real git says "nothing changed", and force-beta
+# The same repo, forced: real git says "nothing changed", and force
 # overrides exactly that (#13). The stubbed cases above cannot show this —
 # outside a repo a failing `git diff` also reads as "changed".
-CAP ASSUME_CHANGED='*' bash -c "cd '$WITHOUT' && PRODUCTS_DIR='$WITHOUT/Config/products' GIT_TAGS='app-v1.0.0-beta.1' BUILD_NUMBER=x python3 '$PY' plan-beta"
-jok "force-beta cuts beta.2 where real git saw no change" \
-  'b=json.loads(o["beta-products"]); assert [x["release-tag"] for x in b]==["app-v1.0.0-beta.2"], b'
-rm -rf "$WITH" "$WITHOUT"
+CAP ASSUME_CHANGED='*' bash -c "cd '$WITHOUT' && PRODUCTS_DIR='$WITHOUT/Config/products' BUILD_NUMBER=260102000000 python3 '$PY' plan"
+jok "force builds where real git saw no change" \
+  'b=json.loads(o["products"]); assert [x["release-tag"] for x in b]==["app-v1.0.0-260102000000"], b'
+
+echo "== build tags: the newest build is the diff base; a -beta.N tag is none =="
+# Edit the product file and tag that commit as a second build: only a diff
+# against the NEWEST build sees nothing changed since.
+( set -e; cd "$WITHOUT"
+  echo >> Config/products/app.json; git commit -qam "product edit"
+  git tag app-v1.0.0-260103000000 ) >/dev/null 2>&1
+plan_in "$WITHOUT"
+line "diffs against the newest build, not the first" "has-any=false"
+# A pre-v0.4.0 tag is not a build tag (#15): the first push after an app
+# upgrades builds once, although real git sees no product change.
+OLD=$(mktemp -d); mkrepo "$OLD" '' app-v1.0.0-beta.1
+plan_in "$OLD"
+jok "an old -beta.N tag is ignored → the product builds once" \
+  'b=json.loads(o["products"]); assert [x["release-tag"] for x in b]==["app-v1.0.0-260102000000"], b'
+rm -rf "$WITH" "$WITHOUT" "$OLD"
 
 echo "== classify_upload: altool outcome classification =="
 # Sourced from the shipped script rather than re-implemented, so this test cannot
@@ -276,7 +292,7 @@ grep -B 4 'security create-keychain' "$KCWF" | grep -q 'security delete-keychain
 echo "== distribute-pr: every product compiles, whether or not tests run =="
 # The tests never stand in for this compile — the swift runner never opens the
 # Xcode project, and the xcodebuild runner builds for the Simulator in Debug,
-# while the beta archives for a device in Release (#10).
+# while distribute.yml archives for a device in Release (#10).
 PRWF="$ROOT/.github/workflows/distribute-pr.yml"
 VERIFY="$(awk '$0=="  verify:"{f=1;next} f&&/^  [a-z][a-z0-9_-]*:[ ]*$/{f=0} f' "$PRWF")"
 COMPILE="$(awk 'index($0,"- name: Compile (no signing)"){f=1;next} f&&/^      - name: /{f=0} f' <<<"$VERIFY")"

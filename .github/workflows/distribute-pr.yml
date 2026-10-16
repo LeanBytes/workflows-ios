@@ -15,7 +15,7 @@
 #       types: [opened, synchronize]
 #   jobs:
 #     pr:
-#       uses: LeanBytes/workflows-ios/.github/workflows/distribute-pr.yml@v0.3.0
+#       uses: LeanBytes/workflows-ios/.github/workflows/distribute-pr.yml@v0.4.0
 # ─────────────────────────────────────────────────────────────────────────────
 name: distribute-pr
 
@@ -137,8 +137,8 @@ jobs:
   # ── Compile every product (fan-out) — no signing, fast "does it build?" ──
   # NOTHING here is gated on `run-tests`. The tests never stand in for this
   # compile: the swift runner never opens the Xcode project, and the xcodebuild
-  # runner builds for the Simulator in Debug, while the beta archives for a
-  # device in Release (#10). This job and `test` both need only `discover`, so
+  # runner builds for the Simulator in Debug, while distribute.yml archives for
+  # a device in Release (#10). This job and `test` both need only `discover`, so
   # they run in parallel — a duplicate build costs runner minutes, never PR
   # latency.
   verify:
@@ -223,7 +223,7 @@ jobs:
   test:
     if: inputs.run-tests
     needs: discover
-    uses: LeanBytes/workflows-ios/.github/workflows/_test.yml@v0.3.0
+    uses: LeanBytes/workflows-ios/.github/workflows/_test.yml@v0.4.0
     with:
       test-runner: ${{ inputs.test-runner }}
       runs-on: ${{ inputs.runs-on-build }}

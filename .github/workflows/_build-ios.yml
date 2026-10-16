@@ -1,16 +1,16 @@
 # ── Internal Build Callee — iOS / iPadOS App Store Distribution ──────────────
 # Produces a signed .ipa for App Store Connect (TestFlight + App Store),
 # published as a GitHub Actions workflow artifact (named by the artifact-name
-# input; default "ios-build"). The beta orchestrator (distribute-beta.yml)
-# downloads the artifact and pushes it via `xcrun altool --upload-app --type ios`
-# (or, for an Ad Hoc product, to S3). There is no separate release build (#14).
+# input; default "ios-build"). The orchestrator (distribute.yml) downloads the
+# artifact and pushes it via `xcrun altool --upload-app --type ios` (or, for an
+# Ad Hoc product, to S3). There are no betas and no release build (#14, #15).
 #
 # Both iOS channels (App Store Connect, Ad Hoc) archive and sign identically;
 # only the export method differs. There is no notarization, no stapling, no
 # Gatekeeper assessment, no DMG/ZIP, no Sparkle appcast, no Developer ID.
 #
 # Underscore prefix marks this as an internal callee — per-app shells should
-# call distribute-pr.yml / distribute-beta.yml, not this file directly.
+# call distribute-pr.yml / distribute.yml, not this file directly.
 #
 # Required caller secrets:
 #   APPLE_DISTR_P12_BASE64  — Apple Distribution cert + private key (signs the .app)
@@ -39,10 +39,6 @@ on:
         type: string
       build-number:
         description: "Build number (CFBundleVersion), timestamp-based"
-        required: true
-        type: string
-      artifact-label:
-        description: "Label for artifact filenames"
         required: true
         type: string
 
