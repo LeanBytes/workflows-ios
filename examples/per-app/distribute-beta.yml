@@ -17,8 +17,8 @@ on:
   # a TestFlight build about to expire (90 days), the yearly Ad Hoc profile
   # renewal (update the profile secret first), a toolchain or dependency bump,
   # a flaky runner. It does NOT override "already released": bump the changelog
-  # version for that. Run it against main: it pushes a beta tag and a
-  # pre-release.
+  # version for that. Run it against main: on any other branch it ships and
+  # tags that branch's commit instead.
   workflow_dispatch:
     inputs:
       force-beta:

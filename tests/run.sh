@@ -81,10 +81,9 @@ jok "beta-products is an empty array, not absent" 'assert json.loads(o["beta-pro
 echo "== force-beta: ASSUME_CHANGED overrides \"nothing changed\", not \"already shipped\" =="
 # Backs the orchestrator's force-beta checkbox. `*` = every product; a list
 # names them. Empty MUST count as unset, or the off position of the switch
-# would silently stop every beta on every normal push (#13).
-CAP PRODUCTS_DIR="$MULTI" GIT_TAGS="main-v2.14.0-beta.1 companion-v1.3.0-beta.1" ASSUME_CHANGED="*" BUILD_NUMBER="x" python3 "$PY" plan-beta
-jok "'*' forces every product" \
-  'b={x["id"]:x for x in json.loads(o["beta-products"])}; assert sorted(b)==["companion","main"], b; assert b["main"]["release-tag"]=="main-v2.14.0-beta.2"'
+# would silently stop every beta on every normal push (#13). `*` itself is
+# asserted in the real-git source-paths section below: with stub tags, a
+# failing `git diff` reads as "changed" too, so no stubbed case can show it.
 
 # Empty must behave EXACTLY like unset, whatever git then says — that is the
 # invariant, and it holds without depending on this repo's tag state.
