@@ -8,15 +8,17 @@ The canonical shared **iOS / iPadOS** CI/CD workflows for LeanBytes apps — the
 `LeanBytes/workflows-macos`. Each app repo carries tiny per-app shell workflows that call into the
 orchestrators here via `uses: LeanBytes/workflows-ios/.github/workflows/<orchestrator>.yml@<tag>`.
 
-**The defining constraint: iOS has no external distribution.** Everything ships through App Store
-Connect. The macOS repo's entire Developer ID / Direct channel has no analogue here and is
-deliberately absent — no notarization, no `stapler`, no `spctl`, no DMG/`hdiutil`, no `ditto` ZIP, no
-Sparkle appcast or `generate_appcast`, no `SPARKLE_ED_PRIVATE_KEY`, no S3 hosting, no
-`Mac Installer Distribution`/`productbuild`/`.pkg`, no unlisted alpha hand-out. One channel: archive
-→ export `.ipa` → `xcrun altool --upload-app --type ios`.
+**The defining constraint: iOS has no Developer ID equivalent.** A product ships through App Store
+Connect (archive → export `.ipa` → `xcrun altool --upload-app --type ios`), or — the one exception,
+for users TestFlight cannot serve — as an **Ad Hoc** build (`release-testing` export, IPA + manifest
+on S3, installed via `itms-services://`). The macOS repo's Developer ID / Direct channel has no
+analogue here and is deliberately absent — no notarization, no `stapler`, no `spctl`, no
+DMG/`hdiutil`, no `ditto` ZIP, no Sparkle appcast or `generate_appcast`, no `SPARKLE_ED_PRIVATE_KEY`,
+no `Mac Installer Distribution`/`productbuild`/`.pkg`, no unlisted alpha hand-out.
 
-Because there is one channel there is **one build callee and one `has-any` gate**, where macOS has
-two of each (`direct` + `store`). Don't reintroduce the split.
+Both channels archive and sign identically — only the ExportOptions `method` and the publish leg
+differ — so there is **one build callee and one `has-any` gate**, where macOS has two of each
+(`direct` + `store`). Don't reintroduce the split.
 
 Layout: `.github/workflows/_build-ios.yml` is the internal callee;
 `.github/workflows/distribute-{pr,beta}.yml` are the orchestrators; `_test.yml` is a reusable

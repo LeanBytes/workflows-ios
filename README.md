@@ -5,7 +5,8 @@ App Store Connect (TestFlight + App Store). The iOS sibling of
 [`workflows-macos`](https://github.com/LeanBytes/workflows-macos).
 
 > **Heads up — strongly opinionated.** These workflows are tailored to how **LeanBytes** ships iOS
-> apps. The choices baked in — one channel (App Store Connect), timestamp-based build numbers, one
+> apps. The choices baked in — App Store Connect as the channel (Ad Hoc only where TestFlight can't
+> serve), the TestFlight beta as the build that ships, timestamp-based build numbers, one
 > self-contained `Config/products/<id>.json` per product (build identity + inline changelog) as the
 > source of truth, self-hosted macOS runners by default — reflect that specific use case.
 

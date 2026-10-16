@@ -5,9 +5,9 @@
 # downloads the artifact and pushes it via `xcrun altool --upload-app --type ios`
 # (or, for an Ad Hoc product, to S3). There is no separate release build (#14).
 #
-# iOS has ONE distribution channel. There is no notarization, no stapling, no
-# Gatekeeper assessment, no DMG/ZIP, no Sparkle appcast, no Developer ID —
-# everything ships through App Store Connect.
+# Both iOS channels (App Store Connect, Ad Hoc) archive and sign identically;
+# only the export method differs. There is no notarization, no stapling, no
+# Gatekeeper assessment, no DMG/ZIP, no Sparkle appcast, no Developer ID.
 #
 # Underscore prefix marks this as an internal callee — per-app shells should
 # call distribute-pr.yml / distribute-beta.yml, not this file directly.

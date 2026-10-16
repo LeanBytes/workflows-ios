@@ -17,9 +17,10 @@ Subcommands:
                  a marker pushed by hand once the version shipped. Nothing builds
                  on it — the TestFlight beta IS the build that ships.
 
-iOS ships through exactly ONE channel (App Store Connect), so unlike the macOS
-sibling there are no per-channel subsets — a single `has-any` boolean gates the
-build job (an empty matrix throws rather than skipping).
+Both iOS channels (App Store Connect, Ad Hoc) build the same way — only the
+export method and publish leg differ — so unlike the macOS sibling there are no
+per-channel subsets: a single `has-any` boolean gates the build job (an empty
+matrix throws rather than skipping).
 
 Everything is pure stdlib. Git access is isolated so the logic unit-tests
 offline: set `GIT_TAGS` (space-separated) and `ASSUME_CHANGED` (space-separated

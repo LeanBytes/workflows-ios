@@ -11,9 +11,10 @@
 # version — or push a bare `<id>-v<ver>` / `v<ver>` marker tag, which idles that
 # product here. An Ad Hoc beta is live on S3 the moment it is cut.
 #
-# iOS ships through ONE channel, so unlike the macOS sibling there is no
-# direct/store split: a single `has-any` boolean gates the build job (an empty
-# matrix throws rather than skipping, so the boolean is load-bearing).
+# Both iOS channels (App Store Connect, Ad Hoc) build the same way, so unlike
+# the macOS sibling there is no direct/store split: a single `has-any` boolean
+# gates the build job (an empty matrix throws rather than skipping, so the
+# boolean is load-bearing).
 #
 # TestFlight groups, tester assignment and "What to Test" are configured in App
 # Store Connect — this workflow only uploads the build.
