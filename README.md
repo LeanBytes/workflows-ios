@@ -88,8 +88,7 @@ One `Config/products/<id>.json` per shippable product — see the schema below a
 Per-product overrides (a multi-product repo, or a product signing under a different team) name their
 own secrets in the product file — e.g. `PROV_PROF_STORE_PRO_BASE64`, `APPLE_DISTR_P12_ALT_BASE64`.
 
-No repo **Variables** are needed. (The macOS sibling needs `S3_DISTRIBUTION_PATH` /
-`S3_DOWNLOAD_URL` for direct-download hosting; iOS has no binaries to host.)
+The App Store channel needs no repo **Variables**; the Ad Hoc channel needs two (below).
 
 ### Ad Hoc channel (`"channel": "ad-hoc"`)
 
