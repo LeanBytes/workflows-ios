@@ -1,7 +1,8 @@
 name: selftest
 
 # CI for workflows-ios itself (the repo has no other self-CI): lint every
-# workflow and run the products.py offline suite whenever .github/** or tests/**
+# workflow, including the example shells apps copy verbatim, and run the
+# products.py offline suite whenever .github/**, tests/** or examples/**
 # change. The `job_workflow_sha` context and shellcheck style findings are
 # ignored (the former is an actionlint gap; the latter are the intentional
 # "read all TSV columns, use a subset" publish loops).
@@ -11,11 +12,13 @@ on:
     paths:
       - '.github/**'
       - 'tests/**'
+      - 'examples/**'
   push:
     branches: [main]
     paths:
       - '.github/**'
       - 'tests/**'
+      - 'examples/**'
 
 permissions:
   contents: read
@@ -47,7 +50,7 @@ jobs:
           "$RUNNER_TEMP/actionlint/actionlint" \
             -ignore 'property "job_workflow_sha" is not defined' \
             -ignore 'shellcheck reported issue' \
-            .github/workflows/*.yml
+            .github/workflows/*.yml examples/per-app/*.yml
 
       - name: products.py offline tests
         run: bash tests/run.sh

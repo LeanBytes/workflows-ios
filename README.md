@@ -301,10 +301,11 @@ each app repo:
 ```bash
 bash tests/run.sh   # offline products.py + classify_upload suite; no git repo, no network
 actionlint -ignore 'property "job_workflow_sha" is not defined' \
-           -ignore 'shellcheck reported issue' .github/workflows/*.yml
+           -ignore 'shellcheck reported issue' .github/workflows/*.yml examples/per-app/*.yml
 ```
 
-`selftest.yml` runs both on every PR and push to `main` that touches `.github/**` or `tests/**`.
+`selftest.yml` runs both on every PR and push to `main` that touches `.github/**`, `tests/**` or
+`examples/**`.
 
 **Tag discipline:** every workflow change ships under a new patch tag, and the `@vX.Y.Z` callouts
 *inside* the shared workflows **and** in `examples/per-app/` are bumped in the same commit.
