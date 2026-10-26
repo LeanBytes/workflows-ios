@@ -1,5 +1,7 @@
 # workflows-ios
 
+> **Being replaced by [`LeanBytes/workflows-apple`](https://github.com/LeanBytes/workflows-apple)**, which folded iPhone and iPad back in (v0.6.5). Apps on this repo keep working; move them with [its migration guide](https://github.com/LeanBytes/workflows-apple/blob/main/MIGRATING.md#from-workflows-ios). This repo gets only blocking fixes and is archived once its last app has moved.
+
 Reusable GitHub Actions workflows for iOS / iPadOS app distribution — build, sign, and ship to
 App Store Connect (TestFlight + App Store). The iOS sibling of
 [`workflows-macos`](https://github.com/LeanBytes/workflows-macos).

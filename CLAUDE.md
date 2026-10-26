@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Being replaced by `LeanBytes/workflows-apple`** (v0.6.5 folded iPhone and iPad back in). Only blocking fixes land here until the last app has moved; then this repo is archived. Careful with main: the `.shared-ci` checkouts use the nonexistent `github.job_workflow_sha`, so every pinned caller runs main's scripts, and any script change on main reaches all of them at once (workflows-macos#34).
+
 ## Repository purpose
 
 The canonical shared **iOS / iPadOS** CI/CD workflows for LeanBytes apps — the sibling of
